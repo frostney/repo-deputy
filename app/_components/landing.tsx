@@ -52,6 +52,7 @@ const FEATURES: Array<{
 export function Landing({ onAudit }: Props) {
   const [url, setUrl] = useState("");
   const [stats, setStats] = useState<ScanStats | null>(null);
+  const visibleStats = stats?.available ? stats : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -168,33 +169,37 @@ export function Landing({ onAudit }: Props) {
               Last seen: in your last AI-assisted PR · Reward: a clean diff
             </div>
           </div>
-          <div className="flex-1" />
-          <div className="grid w-full grid-cols-3 gap-4 border-t border-black/15 pt-4 text-left sm:w-auto sm:min-w-[250px] sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5">
-            <div>
-              <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
-                {formatCounter(stats, "totalRuns")}
+          {visibleStats ? (
+            <>
+              <div className="flex-1" />
+              <div className="grid w-full grid-cols-3 gap-4 border-t border-black/15 pt-4 text-left sm:w-auto sm:min-w-[250px] sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5">
+                <div>
+                  <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
+                    {formatCounter(visibleStats.totalRuns)}
+                  </div>
+                  <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
+                    Runs
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
+                    {formatCounter(visibleStats.repositoryCount)}
+                  </div>
+                  <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
+                    Repos
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
+                    {formatCounter(visibleStats.totalFilesScanned)}
+                  </div>
+                  <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
+                    Code files
+                  </div>
+                </div>
               </div>
-              <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
-                Runs
-              </div>
-            </div>
-            <div>
-              <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
-                {formatCounter(stats, "repositoryCount")}
-              </div>
-              <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
-                Repos
-              </div>
-            </div>
-            <div>
-              <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
-                {formatCounter(stats, "totalFilesScanned")}
-              </div>
-              <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
-                Code files
-              </div>
-            </div>
-          </div>
+            </>
+          ) : null}
         </div>
 
         <div className="mt-[72px] flex items-center justify-center gap-3 font-[family-name:var(--font-mono)] text-xs tracking-[0.3em] text-text-mute">
@@ -236,16 +241,9 @@ export function Landing({ onAudit }: Props) {
   );
 }
 
-function formatCounter(
-  stats: ScanStats | null,
-  key: "totalRuns" | "repositoryCount" | "totalFilesScanned",
-) {
-  if (!stats?.available) {
-    return "N/A";
-  }
-
+function formatCounter(value: number) {
   return new Intl.NumberFormat("en-US", {
-    notation: stats[key] >= 100_000 ? "compact" : "standard",
+    notation: value >= 100_000 ? "compact" : "standard",
     maximumFractionDigits: 1,
-  }).format(stats[key]);
+  }).format(value);
 }

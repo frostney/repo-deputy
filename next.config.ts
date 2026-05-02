@@ -1,9 +1,5 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  outputFileTracingExcludes: {
-    "/api/scan": ["./next.config.ts"],
-  },
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

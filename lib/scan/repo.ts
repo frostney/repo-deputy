@@ -79,7 +79,7 @@ export async function collectRepoScanContext(
   input: RepoScanInput = { focus: "full" },
 ): Promise<ReviewContext> {
   const rootPath = path.resolve(
-    input.rootPath ?? /*turbopackIgnore: true*/ process.cwd(),
+    /*turbopackIgnore: true*/ input.rootPath ?? process.cwd(),
   );
   const files = await readRepoFiles(rootPath);
   const repoName = path.basename(rootPath);

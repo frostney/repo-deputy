@@ -51,6 +51,22 @@ export type ScanResult = {
   toolResults: ApiToolResult[];
 };
 
+export type ScanStats = {
+  available: boolean;
+  storage: "mubit" | "unconfigured";
+  totalRuns: number;
+  totalFilesScanned: number;
+  repositoryCount: number;
+  lastRunAt: string | null;
+  repositories: Array<{
+    repo: string;
+    repoUrl?: string;
+    runs: number;
+    filesScanned: number;
+    lastRunAt: string;
+  }>;
+};
+
 export const FINDINGS: Finding[] = [
   {
     id: "f1",

@@ -6,6 +6,7 @@ import { runCodeDriftChecks } from "@/lib/review/code-drift";
 import { runDocsDriftChecks } from "@/lib/review/docs-drift";
 import { runFallowAnalysis } from "@/lib/review/fallow-placeholder";
 import { buildFallbackReport, generateDeputyReport } from "@/lib/review/generate-report";
+import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
 import type {
   ChangedFile,
   DeputyReport,
@@ -100,6 +101,7 @@ async function runScanChecks(context: ReviewContext, focus: ReviewFocus) {
 
   if (focus === "docs" || focus === "full") {
     findings.push(...runDocsDriftChecks(context));
+    findings.push(...runMarkdownDuplicationChecks(context));
   }
 
   if (focus === "code" || focus === "full") {

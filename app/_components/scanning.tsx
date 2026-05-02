@@ -369,11 +369,14 @@ function failedStepIndex(result: ScanResult) {
   if (failedTool.id === "fallow") {
     return 3;
   }
-  if (failedTool.id === "markdownlint") {
+  if (failedTool.id === "light-language-analysis") {
     return 4;
   }
-  if (failedTool.id === "markdown-link-check") {
+  if (failedTool.id === "markdownlint") {
     return 5;
+  }
+  if (failedTool.id === "markdown-link-check") {
+    return 6;
   }
 
   return SCAN_CHECKS.length - 1;

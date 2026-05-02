@@ -24,6 +24,10 @@ describe("collectRepoScanContext", () => {
     expect(context.readme?.path).toBe("README.md");
     expect(context.envExample?.path).toBe(".env.example");
     expect(context.docsFiles.map((file) => file.path)).toContain("docs/setup.md");
+    const filenames = context.changedFiles.map((file) => file.filename);
+    expect(filenames).toContain("lib/script.py");
+    expect(filenames).toContain("lib/task.rb");
+    expect(filenames).toContain("lib/unit.pas");
     expect(
       context.changedFiles.some((file) => file.filename.includes("node_modules")),
     ).toBe(false);
@@ -66,6 +70,24 @@ describe("runRepoScan", () => {
       "docs-markdown-duplicate-exact",
     );
   });
+
+  test("runs lightweight language analysis for supported source files", async () => {
+    const rootPath = await createLightLanguageFixtureRepo();
+
+    const result = await runRepoScan({
+      focus: "full",
+      rootPath,
+      useAi: false,
+      useMemory: false,
+    });
+
+    expect(result.report.toolResults?.map((tool) => tool.id)).toContain(
+      "light-language-analysis",
+    );
+    expect(result.report.findings.map((finding) => finding.id)).toContain(
+      "light-language-duplication",
+    );
+  });
 });
 
 async function createFixtureRepo() {
@@ -98,6 +120,12 @@ async function createFixtureRepo() {
     path.join(rootPath, "lib/format.ts"),
     "export function formatFinding() {}\nexport function formatReviewFinding() {}\n",
   );
+  await writeFile(path.join(rootPath, "lib/script.py"), "def ok():\n    return 1\n");
+  await writeFile(path.join(rootPath, "lib/task.rb"), "def ok\n  1\nend\n");
+  await writeFile(
+    path.join(rootPath, "lib/unit.pas"),
+    "unit Unit1;\ninterface\nimplementation\nend.\n",
+  );
   await writeFile(path.join(rootPath, "node_modules/ignored/index.ts"), "ignored");
 
   return rootPath;
@@ -128,4 +156,37 @@ async function createMarkdownDuplicationFixtureRepo() {
   await writeFile(path.join(rootPath, "docs/two.md"), `# Two\n\n${duplicate}`);
 
   return rootPath;
+}
+
+async function createLightLanguageFixtureRepo() {
+  const rootPath = await mkdtemp(path.join(tmpdir(), "repo-deputy-lang-scan-"));
+  tempDirs.push(rootPath);
+
+  await mkdir(path.join(rootPath, "src"), { recursive: true });
+  await writeFile(
+    path.join(rootPath, "package.json"),
+    JSON.stringify({
+      packageManager: "bun@1.3.9",
+      scripts: { dev: "bun run dev" },
+    }),
+  );
+  await writeFile(path.join(rootPath, "README.md"), "Run bun run dev.\n");
+  await writeFile(path.join(rootPath, "src/a.py"), duplicatePythonBlock("alpha"));
+  await writeFile(path.join(rootPath, "src/b.py"), duplicatePythonBlock("beta"));
+
+  return rootPath;
+}
+
+function duplicatePythonBlock(name: string) {
+  return [
+    `def ${name}():`,
+    "    customer_profile = load_customer_profile_with_history(account_id, region_code)",
+    "    billing_profile = normalize_billing_profile_for_invoice_run(customer_profile)",
+    "    usage_records = collect_usage_records_for_statement_window(customer_profile)",
+    "    risk_summary = calculate_account_risk_summary_for_operations(customer_profile)",
+    "    invoice_lines = build_invoice_lines_from_usage_records(usage_records)",
+    "    audit_context = create_audit_context_for_finance_reconciliation(customer_profile)",
+    "    publish_finance_audit_event(audit_context, billing_profile, risk_summary)",
+    "    return render_invoice_response(invoice_lines, billing_profile, risk_summary)",
+  ].join("\n");
 }

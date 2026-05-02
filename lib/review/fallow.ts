@@ -6,6 +6,7 @@ import type {
   ToolCheckOutput,
   ToolCheckResult,
 } from "@/lib/review/types";
+import { toolIssuesToFindings } from "@/lib/review/tool-results";
 
 export const FALLOW_TOOL_ID = "fallow";
 export const FALLOW_COMMAND =
@@ -158,20 +159,6 @@ export function fallowJsonToToolIssues(raw: unknown): ToolCheckIssue[] {
   }
 
   return issues;
-}
-
-export function toolIssuesToFindings(result: ToolCheckResult): Finding[] {
-  return result.issues.map((issue) => ({
-    id: issue.id,
-    category: issue.category,
-    severity: issue.severity,
-    title: issue.title,
-    summary: issue.message,
-    evidence: issue.evidence,
-    files: issue.path ? [issue.path] : [],
-    suggestedFix: issue.suggestedFix,
-    confidence: result.status === "error" ? 0.7 : 0.86,
-  }));
 }
 
 function deadCodeIssues(check: JsonRecord): ToolCheckIssue[] {

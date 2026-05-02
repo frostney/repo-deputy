@@ -31,9 +31,9 @@ For remote repository scans, pass `repo=owner/repo` or a public git URL:
 ```
 
 That path creates a Vercel Sandbox with a depth-1 git source checkout, runs
-Fallow, markdownlint, and markdown-link-check, then returns the parsed tool
-results and lifted Repo Deputy findings. Local scans do not require Vercel
-Sandbox credentials.
+Fallow, lightweight Python/Ruby/Object Pascal analysis, markdownlint, and
+markdown-link-check, then returns the parsed tool results and lifted Repo
+Deputy findings. Local scans do not require Vercel Sandbox credentials.
 
 ## MCP Flow
 
@@ -48,8 +48,10 @@ Sandbox credentials.
 
 Passing `repoUrl` to `repo_deputy_scan_repo` switches the MCP tool to the
 sandbox scan path. Sandbox scans always use a depth-1 git checkout and run the
-external toolchain. Passing `runExternalTools: true` with `rootPath` runs the
-local Fallow adapter for local checkouts.
+external toolchain plus the in-process lightweight language analyzer. Passing
+`runExternalTools: true` with `rootPath` runs the local Fallow adapter for local
+checkouts; Python/Ruby/Object Pascal analysis does not require external
+language runtimes.
 
 ## Why This Shape
 

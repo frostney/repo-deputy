@@ -66,14 +66,15 @@ Notes:
 - `rootPath` defaults to the MCP server working directory.
 - `repoUrl` accepts a public git URL or GitHub `owner/repo` shorthand. When set,
   Repo Deputy uses Vercel Sandbox with `depth: 1` instead of `rootPath`.
-- Sandbox scans run Fallow, markdownlint, and markdown-link-check and return
-  parsed `toolResults`.
+- Sandbox scans run Fallow, lightweight Python/Ruby/Object Pascal analysis,
+  markdownlint, and markdown-link-check and return parsed `toolResults`.
 - `focus` can be `docs`, `code`, or `full`.
 - `useAi` defaults to `false` so local MCP calls are deterministic by default.
 - `useMemory` defaults to `false` so MCP scans do not write Mubit memory unless
   explicitly requested.
 - `runExternalTools` can be set to `true` for local `rootPath` scans to run the
-  local Fallow adapter.
+  local Fallow adapter. The lightweight Python/Ruby/Object Pascal analyzer is
+  in-process and does not need those language runtimes.
 
 ### `repo_deputy_check_drift`
 

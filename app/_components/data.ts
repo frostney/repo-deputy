@@ -256,6 +256,12 @@ export const SCAN_CHECKS: ScanCheck[] = [
     duration: 1800,
   },
   {
+    id: "light-language-analysis",
+    name: "Checking Python/Ruby/Pascal",
+    meta: "complexity · duplication",
+    duration: 1300,
+  },
+  {
     id: "markdownlint",
     name: "Linting Markdown",
     meta: "markdownlint-cli2",

@@ -71,8 +71,10 @@ Remote repository scans use Vercel Sandbox and a shallow git checkout:
 http://localhost:3000/api/scan?repo=vercel/next.js&focus=full&ai=false
 ```
 
-The sandbox scan runs Fallow, markdownlint, and markdown-link-check, then
-returns parsed `toolResults` alongside Repo Deputy findings.
+The sandbox scan runs Fallow, lightweight Python/Ruby/Object Pascal analysis,
+markdownlint, and markdown-link-check, then returns parsed `toolResults`
+alongside Repo Deputy findings. The lightweight language analyzer is
+in-process and does not require Python, Ruby, Delphi, or Free Pascal runtimes.
 
 ## MCP Server
 

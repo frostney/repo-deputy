@@ -7,12 +7,14 @@ import { runCodeDriftChecks } from "@/lib/review/code-drift";
 import { runDocsDriftChecks } from "@/lib/review/docs-drift";
 import { runFallowAnalysis } from "@/lib/review/fallow";
 import { buildFallbackReport, generateDeputyReport } from "@/lib/review/generate-report";
+import { runLightLanguageAnalysis } from "@/lib/review/light-language";
 import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
 import { runSandboxRepoScan } from "@/lib/scan/sandbox";
 import type {
   ChangedFile,
   DeputyReport,
   Finding,
+  LightLanguageSkipped,
   RepoFile,
   RepoScanInput,
   RepoScanResult,
@@ -32,7 +34,9 @@ const IGNORE_DIRS = new Set([
 
 const MAX_FILE_BYTES = 180_000;
 const MAX_TOTAL_FILES = 700;
-const TEXT_FILE_PATTERN = /\.(cjs|css|env|js|json|jsx|md|mdx|mjs|ts|tsx|txt|yaml|yml)$/i;
+const TEXT_FILE_PATTERN =
+  /\.(cjs|css|env|gemspec|inc|js|json|jsx|lpr|md|mdx|mjs|pas|pp|py|pyi|pyw|rake|rb|ts|tsx|txt|yaml|yml)$/i;
+const TEXT_FILE_BASENAMES = new Set(["Capfile", "Gemfile", "Guardfile", "Rakefile"]);
 
 export async function runRepoScan(input: RepoScanInput = { focus: "full" }) {
   if (input.repoUrl || input.useSandbox) {
@@ -81,7 +85,7 @@ export async function collectRepoScanContext(
   const rootPath = path.resolve(
     input.rootPath ?? /*turbopackIgnore: true*/ process.cwd(),
   );
-  const files = await readRepoFiles(rootPath);
+  const { files, lightLanguageSkipped } = await readRepoFiles(rootPath);
   const repoName = path.basename(rootPath);
   const repo = `local/${repoName}`;
   const packageJson = findFile(files, "package.json");
@@ -105,6 +109,7 @@ export async function collectRepoScanContext(
     envExample,
     memoryInsights: [],
     toolResults: [],
+    lightLanguageSkipped,
     runExternalTools: input.runExternalTools,
   };
 }
@@ -119,6 +124,7 @@ async function runScanChecks(context: ReviewContext, focus: ReviewFocus) {
 
   if (focus === "code" || focus === "full") {
     findings.push(...runCodeDriftChecks(context));
+    findings.push(...runLightLanguageAnalysis(context));
     findings.push(...(await runFallowAnalysis(context)));
   }
 
@@ -127,6 +133,12 @@ async function runScanChecks(context: ReviewContext, focus: ReviewFocus) {
 
 async function readRepoFiles(rootPath: string) {
   const files: RepoFile[] = [];
+  const lightLanguageSkipped: Required<LightLanguageSkipped> = {
+    tooLarge: 0,
+    unsupported: 0,
+    totalLimit: 0,
+    unreadable: 0,
+  };
 
   async function walk(directory: string) {
     if (files.length >= MAX_TOTAL_FILES) {
@@ -175,6 +187,9 @@ async function readRepoFiles(rootPath: string) {
       }
 
       if (fileStat.size > MAX_FILE_BYTES) {
+        if (isLightLanguageCandidatePath(relativePath)) {
+          lightLanguageSkipped.tooLarge += 1;
+        }
         continue;
       }
 
@@ -182,6 +197,9 @@ async function readRepoFiles(rootPath: string) {
       try {
         content = await readFile(/*turbopackIgnore: true*/ absolutePath, "utf8");
       } catch {
+        if (isLightLanguageCandidatePath(relativePath)) {
+          lightLanguageSkipped.unreadable += 1;
+        }
         continue;
       }
 
@@ -194,7 +212,10 @@ async function readRepoFiles(rootPath: string) {
   }
 
   await walk(rootPath);
-  return files.sort((a, b) => a.path.localeCompare(b.path));
+  return {
+    files: files.sort((a, b) => a.path.localeCompare(b.path)),
+    lightLanguageSkipped,
+  };
 }
 
 function toChangedFile(file: RepoFile): ChangedFile {
@@ -255,10 +276,20 @@ function parseJson(content: string | undefined) {
 }
 
 function isScannablePath(filePath: string) {
+  const basename = path.basename(filePath);
   return (
     TEXT_FILE_PATTERN.test(filePath) ||
+    TEXT_FILE_BASENAMES.has(basename) ||
     filePath === "package.json" ||
     filePath === ".env.example"
+  );
+}
+
+function isLightLanguageCandidatePath(filePath: string) {
+  const basename = path.basename(filePath);
+  return (
+    /\.(gemspec|inc|lpr|pas|pp|py|pyi|pyw|rake|rb)$/i.test(filePath) ||
+    TEXT_FILE_BASENAMES.has(basename)
   );
 }
 

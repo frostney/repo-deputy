@@ -6,6 +6,7 @@ import { runCodeDriftChecks } from "@/lib/review/code-drift";
 import { runDocsDriftChecks } from "@/lib/review/docs-drift";
 import { runFallowAnalysis } from "@/lib/review/fallow";
 import { buildFallbackReport } from "@/lib/review/generate-report";
+import { runLightLanguageAnalysis } from "@/lib/review/light-language";
 import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
 import { SEEDED_DEMO_FINDINGS } from "@/lib/review/mock-findings";
 import { reportToMarkdown } from "@/lib/review/report-markdown";
@@ -302,6 +303,7 @@ async function runDeterministicChecks(context: ReviewContext) {
 
   if (context.focus === "code" || context.focus === "full") {
     findings.push(...runCodeDriftChecks(context));
+    findings.push(...runLightLanguageAnalysis(context));
     findings.push(...(await runFallowAnalysis(context)));
   }
 

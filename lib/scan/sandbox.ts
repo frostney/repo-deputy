@@ -1,10 +1,7 @@
 import { Sandbox } from "@vercel/sandbox";
 import { buildFallbackReport, generateDeputyReport } from "@/lib/review/generate-report";
-import {
-  buildFallowToolResult,
-  FALLOW_COMMAND,
-  toolIssuesToFindings,
-} from "@/lib/review/fallow";
+import { buildLightLanguageToolResult } from "@/lib/review/light-language";
+import { buildFallowToolResult, FALLOW_COMMAND } from "@/lib/review/fallow";
 import {
   buildMarkdownLinkCheckToolResult,
   buildMarkdownlintToolResult,
@@ -18,6 +15,7 @@ import type {
   ReviewContext,
   ToolCheckResult,
 } from "@/lib/review/types";
+import { toolIssuesToFindings } from "@/lib/review/tool-results";
 
 type SandboxCommandOutput = {
   command: string;
@@ -36,6 +34,9 @@ type RepoLocator = {
 const CLONE_DEPTH = 1;
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000;
 const SANDBOX_REPO_DIR = "/vercel/sandbox/repo";
+const MAX_SANDBOX_LANGUAGE_FILES = 250;
+const MAX_SANDBOX_LANGUAGE_FILE_BYTES = 100_000;
+const MAX_SANDBOX_LANGUAGE_TOTAL_BYTES = 2_000_000;
 
 const INSTALL_BUN_COMMAND = [
   "if command -v bun >/dev/null 2>&1; then bun --version; exit 0; fi",
@@ -44,6 +45,117 @@ const INSTALL_BUN_COMMAND = [
   "bash /tmp/repo-deputy-install-bun.sh >/tmp/repo-deputy-install-bun.log 2>&1",
   '"$HOME/.bun/bin/bun" --version',
 ].join(" && ");
+
+const SANDBOX_LANGUAGE_SOURCE_COMMAND = `cat > /tmp/repo-deputy-language-source.ts <<'REPO_DEPUTY_LANGUAGE_SOURCE'
+import { readFile, stat } from "node:fs/promises";
+
+const MAX_FILES = ${MAX_SANDBOX_LANGUAGE_FILES};
+const MAX_FILE_BYTES = ${MAX_SANDBOX_LANGUAGE_FILE_BYTES};
+const MAX_TOTAL_BYTES = ${MAX_SANDBOX_LANGUAGE_TOTAL_BYTES};
+const RUBY_BASENAMES = new Set(["capfile", "gemfile", "guardfile", "rakefile"]);
+
+const git = Bun.spawnSync({
+  cmd: ["git", "ls-files", "-z"],
+  stdout: "pipe",
+  stderr: "pipe",
+});
+
+if (git.exitCode !== 0) {
+  throw new Error(new TextDecoder().decode(git.stderr).trim() || "git ls-files failed");
+}
+
+const paths = new TextDecoder().decode(git.stdout).split("\\0").filter(Boolean);
+const files: Array<{ path: string; content: string; size: number }> = [];
+const skipped = {
+  tooLarge: 0,
+  unsupported: 0,
+  totalLimit: 0,
+  unreadable: 0,
+};
+let totalBytes = 0;
+
+for (const filePath of paths) {
+  const normalizedPath = filePath.replaceAll("\\\\", "/");
+  if (isIgnoredPath(normalizedPath) || !isCandidatePath(normalizedPath)) {
+    continue;
+  }
+
+  let fileStat: { size: number };
+  try {
+    fileStat = await stat(normalizedPath);
+  } catch {
+    skipped.unreadable += 1;
+    continue;
+  }
+
+  if (fileStat.size > MAX_FILE_BYTES) {
+    skipped.tooLarge += 1;
+    continue;
+  }
+
+  if (files.length >= MAX_FILES || totalBytes + fileStat.size > MAX_TOTAL_BYTES) {
+    skipped.totalLimit += 1;
+    continue;
+  }
+
+  let content: string;
+  try {
+    content = await readFile(normalizedPath, "utf8");
+  } catch {
+    skipped.unreadable += 1;
+    continue;
+  }
+
+  if (normalizedPath.toLowerCase().endsWith(".inc") && !looksLikePascal(content)) {
+    skipped.unsupported += 1;
+    continue;
+  }
+
+  files.push({ path: normalizedPath, content, size: fileStat.size });
+  totalBytes += fileStat.size;
+}
+
+console.log(JSON.stringify({ files, skipped }));
+
+function isCandidatePath(filePath: string) {
+  const lowerPath = filePath.toLowerCase();
+  const basename = lowerPath.split("/").at(-1) ?? lowerPath;
+  return (
+    /\\.(py|pyi|pyw|rb|rake|gemspec|pas|pp|lpr|dpr|dpk|inc)$/.test(lowerPath) ||
+    RUBY_BASENAMES.has(basename)
+  );
+}
+
+function isIgnoredPath(filePath: string) {
+  const lowerPath = filePath.toLowerCase();
+  return (
+    lowerPath.startsWith(".git/") ||
+    lowerPath.startsWith(".next/") ||
+    lowerPath.startsWith(".turbo/") ||
+    lowerPath.startsWith("coverage/") ||
+    lowerPath.startsWith("dist/") ||
+    lowerPath.startsWith("node_modules/") ||
+    lowerPath.startsWith("out/") ||
+    lowerPath.startsWith(".venv/") ||
+    lowerPath.startsWith("venv/") ||
+    lowerPath.includes("/__pycache__/") ||
+    lowerPath.startsWith("__pycache__/") ||
+    lowerPath.startsWith(".bundle/") ||
+    lowerPath.startsWith("vendor/bundle/") ||
+    lowerPath.includes("/site-packages/") ||
+    lowerPath.startsWith("site-packages/") ||
+    lowerPath.startsWith("build/") ||
+    lowerPath.startsWith("target/")
+  );
+}
+
+function looksLikePascal(content: string) {
+  return /\\b(unit|interface|implementation|procedure|function|begin)\\b|end\\.|\\{\\$/i.test(
+    content,
+  );
+}
+REPO_DEPUTY_LANGUAGE_SOURCE
+timeout 120s bun --silent /tmp/repo-deputy-language-source.ts`;
 
 export async function runSandboxRepoScan(
   input: RepoScanInput & { repoUrl: string },
@@ -95,6 +207,13 @@ export async function runSandboxRepoScan(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 180s ${FALLOW_COMMAND}`),
+            SANDBOX_REPO_DIR,
+          ),
+        ),
+        parseSandboxLanguageSourcePayload(
+          await runSandboxCommand(
+            sandbox,
+            withBunPath(SANDBOX_LANGUAGE_SOURCE_COMMAND),
             SANDBOX_REPO_DIR,
           ),
         ),
@@ -166,6 +285,40 @@ export function normalizeRepoLocator(value: string): RepoLocator {
     repoName,
     repoUrl: normalizeGitUrl(url),
   };
+}
+
+export function parseSandboxLanguageSourcePayload(
+  output: SandboxCommandOutput,
+): ToolCheckResult {
+  if (output.exitCode !== 0) {
+    return buildLanguageSourceErrorResult(
+      output,
+      "Sandbox language source collection failed before producing JSON.",
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output.stdout);
+  } catch {
+    return buildLanguageSourceErrorResult(
+      output,
+      "Sandbox language source collection returned invalid JSON.",
+    );
+  }
+
+  if (!isSandboxLanguagePayload(parsed)) {
+    return buildLanguageSourceErrorResult(
+      output,
+      "Sandbox language source collection returned an unexpected payload.",
+    );
+  }
+
+  return buildLightLanguageToolResult({
+    files: parsed.files,
+    skipped: parsed.skipped,
+    source: "sandbox",
+  });
 }
 
 function createSandboxContext(input: RepoScanInput, locator: RepoLocator): ReviewContext {
@@ -307,6 +460,41 @@ function buildSetupResult(output: SandboxCommandOutput): ToolCheckResult {
   };
 }
 
+function buildLanguageSourceErrorResult(
+  output: SandboxCommandOutput,
+  message: string,
+): ToolCheckResult {
+  return {
+    id: "light-language-analysis",
+    name: "Lightweight language analysis",
+    command: output.command,
+    status: "error",
+    exitCode: output.exitCode,
+    summary: message,
+    durationMs: output.durationMs,
+    issues: [
+      {
+        id: "light-language-source-collection-error",
+        title: "Lightweight language analysis could not collect source files",
+        severity: "medium",
+        category: "code-drift",
+        message,
+        evidence: [
+          output.stderr ? `stderr: ${output.stderr.slice(0, 1_000)}` : "",
+          output.stdout ? `stdout: ${output.stdout.slice(0, 1_000)}` : "",
+        ].filter(Boolean),
+        suggestedFix:
+          "Rerun Repo Deputy locally or reduce the target source size before rerunning the sandbox scan.",
+      },
+    ],
+    output: {
+      stdout: output.stdout.slice(0, 4_000),
+      stderr: output.stderr.slice(0, 4_000),
+      truncated: output.stdout.length > 4_000 || output.stderr.length > 4_000,
+    },
+  };
+}
+
 function buildSandboxFailureResult(error: unknown): ToolCheckResult {
   const message = sandboxErrorMessage(error);
 
@@ -402,6 +590,40 @@ function sandboxErrorMessage(error: unknown) {
   ].filter(Boolean);
 
   return [...new Set(parts)].join(" | ");
+}
+
+function isSandboxLanguagePayload(value: unknown): value is {
+  files: Array<{ path: string; content: string; size?: number }>;
+  skipped?: {
+    tooLarge?: number;
+    unsupported?: number;
+    totalLimit?: number;
+    unreadable?: number;
+  };
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as {
+    files?: unknown;
+    skipped?: unknown;
+  };
+  if (!Array.isArray(payload.files)) {
+    return false;
+  }
+
+  return payload.files.every((file) => {
+    if (!file || typeof file !== "object") {
+      return false;
+    }
+    const candidate = file as { path?: unknown; content?: unknown; size?: unknown };
+    return (
+      typeof candidate.path === "string" &&
+      typeof candidate.content === "string" &&
+      (candidate.size === undefined || typeof candidate.size === "number")
+    );
+  });
 }
 
 function safeJsonErrorMessage(value: unknown) {

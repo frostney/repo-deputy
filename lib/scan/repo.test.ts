@@ -51,6 +51,21 @@ describe("runRepoScan", () => {
     expect(result.markdown).toContain("## Repo Deputy scan");
     expect(result.markdown).toContain("### What Repo Deputy checked");
   });
+
+  test("includes markdown duplication findings in docs scans", async () => {
+    const rootPath = await createMarkdownDuplicationFixtureRepo();
+
+    const result = await runRepoScan({
+      focus: "docs",
+      rootPath,
+      useAi: false,
+      useMemory: false,
+    });
+
+    expect(result.report.findings.map((finding) => finding.id)).toContain(
+      "docs-markdown-duplicate-exact",
+    );
+  });
 });
 
 async function createFixtureRepo() {
@@ -84,6 +99,33 @@ async function createFixtureRepo() {
     "export function formatFinding() {}\nexport function formatReviewFinding() {}\n",
   );
   await writeFile(path.join(rootPath, "node_modules/ignored/index.ts"), "ignored");
+
+  return rootPath;
+}
+
+async function createMarkdownDuplicationFixtureRepo() {
+  const rootPath = await mkdtemp(path.join(tmpdir(), "repo-deputy-docdup-scan-"));
+  tempDirs.push(rootPath);
+
+  await mkdir(path.join(rootPath, "docs"), { recursive: true });
+  await writeFile(
+    path.join(rootPath, "package.json"),
+    JSON.stringify({
+      packageManager: "bun@1.3.9",
+      scripts: { dev: "bun run dev" },
+    }),
+  );
+
+  const duplicate = [
+    "This duplicated documentation paragraph explains the repository behavior",
+    "with enough repeated words to cross the exact clone threshold while staying",
+    "plain prose that should be consolidated into one canonical section for",
+    "future readers and maintainers who need a single source of truth for",
+    "the scan workflow and expected backend-only verification behavior.",
+  ].join(" ");
+
+  await writeFile(path.join(rootPath, "docs/one.md"), `# One\n\n${duplicate}`);
+  await writeFile(path.join(rootPath, "docs/two.md"), `# Two\n\n${duplicate}`);
 
   return rootPath;
 }

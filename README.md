@@ -26,6 +26,15 @@ Fetch scan JSON directly:
 curl "http://localhost:3000/api/scan?focus=full&ai=false"
 ```
 
+Scan a public GitHub repository in Vercel Sandbox:
+
+```bash
+curl "http://localhost:3000/api/scan?repo=vercel/next.js&focus=full&ai=false"
+```
+
+Sandbox scans use a depth-1 git checkout and run Fallow, markdownlint, and
+markdown-link-check. Local path scans do not need Sandbox credentials.
+
 ## MCP
 
 Start the local MCP server:

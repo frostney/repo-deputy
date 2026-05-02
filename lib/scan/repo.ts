@@ -4,9 +4,10 @@ import { getRepoMemory, writeScanMemory } from "@/lib/memory/repo-memory";
 import type { RepoMemoryEvent } from "@/lib/memory/types";
 import { runCodeDriftChecks } from "@/lib/review/code-drift";
 import { runDocsDriftChecks } from "@/lib/review/docs-drift";
-import { runFallowAnalysis } from "@/lib/review/fallow-placeholder";
+import { runFallowAnalysis } from "@/lib/review/fallow";
 import { buildFallbackReport, generateDeputyReport } from "@/lib/review/generate-report";
 import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
+import { runSandboxRepoScan } from "@/lib/scan/sandbox";
 import type {
   ChangedFile,
   DeputyReport,
@@ -33,6 +34,13 @@ const MAX_TOTAL_FILES = 700;
 const TEXT_FILE_PATTERN = /\.(cjs|css|env|js|json|jsx|md|mdx|mjs|ts|tsx|txt|yaml|yml)$/i;
 
 export async function runRepoScan(input: RepoScanInput = { focus: "full" }) {
+  if (input.repoUrl || input.useSandbox) {
+    if (!input.repoUrl) {
+      throw new Error("repoUrl is required when useSandbox is true.");
+    }
+    return runSandboxRepoScan({ ...input, repoUrl: input.repoUrl });
+  }
+
   const context = await collectRepoScanContext(input);
   const memoryInsights =
     input.useMemory === false
@@ -46,12 +54,13 @@ export async function runRepoScan(input: RepoScanInput = { focus: "full" }) {
   const findings = await runScanChecks(context, input.focus);
   const report =
     input.useAi === false
-      ? buildFallbackReport(findings, memoryInsights, context.focus)
+      ? buildFallbackReport(findings, memoryInsights, context.focus, context.toolResults)
       : await generateDeputyReport({
           repo: context.repo,
           focus: context.focus,
           findings,
           memoryInsights,
+          toolResults: context.toolResults,
         });
 
   if (input.useMemory !== false) {
@@ -84,6 +93,7 @@ export async function collectRepoScanContext(
     repo,
     repoName,
     rootPath,
+    scannedFiles: files.length,
     command: "scan",
     focus: input.focus,
     changedFiles: files.map(toChangedFile),
@@ -93,6 +103,8 @@ export async function collectRepoScanContext(
     readme,
     envExample,
     memoryInsights: [],
+    toolResults: [],
+    runExternalTools: input.runExternalTools,
   };
 }
 

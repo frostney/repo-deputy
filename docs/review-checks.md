@@ -37,13 +37,31 @@ Checks include:
 - External imports missing from `package.json`.
 - Route rename hints for change-set fixtures.
 
-## Fallow Placeholder
+## Fallow
 
-Implemented in `lib/review/fallow-placeholder.ts`.
+Implemented in `lib/review/fallow.ts`.
 
-This is a placeholder adapter shape for a future fallow integration. It returns
-simple deterministic architecture drift hints only. It does not claim real
-fallow integration.
+The adapter runs `bunx --silent fallow --format json --quiet --summary
+--no-cache` when external tools are enabled for a local scan, or parses the same
+JSON output from the sandbox scanner. Fallow findings are converted into Repo
+Deputy findings for dead code/module graph issues, duplicate code groups, and
+complexity hotspots.
+
+## Sandbox Tool Checks
+
+Implemented in `lib/scan/sandbox.ts` with `@vercel/sandbox`.
+
+Remote repository scans create an ephemeral Vercel Sandbox from a git source
+with `depth: 1`, install Bun in the sandbox if needed, then run:
+
+- Fallow for code graph, duplication, and health analysis.
+- `markdownlint-cli2` for Markdown style and structure diagnostics.
+- `markdown-link-check` for broken Markdown links.
+
+Each command returns a structured `toolResults` entry with status, exit code,
+summary, bounded stdout/stderr previews, and parsed issues. Parsed issues are
+also lifted into the main Repo Deputy findings list so they appear in markdown
+reports, API responses, and MCP responses.
 
 ## Report Generation
 
@@ -72,6 +90,7 @@ The markdown always includes:
 - Merge confidence.
 - Summary.
 - Findings or an explicit no-findings statement.
+- Tool checks when sandbox or external CLI tools ran.
 - Suggested next steps.
 - What Repo Deputy checked.
 

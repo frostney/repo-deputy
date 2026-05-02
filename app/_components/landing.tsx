@@ -59,28 +59,30 @@ export function Landing({ onAudit }: Props) {
   return (
     <main className="flex flex-1 flex-col pt-20 pb-32">
       <div className="mx-auto w-full max-w-[880px] px-8">
-        <div className="mx-auto mb-14 max-w-[760px] text-center">
-          <div className="mx-auto mb-7 flex h-[168px] w-[168px] items-center justify-center overflow-hidden rounded-full border border-gold/35 bg-paper shadow-[0_22px_52px_-30px_rgba(0,0,0,0.8)] sm:h-[212px] sm:w-[212px]">
+        <div className="mx-auto mb-14 grid max-w-[880px] items-center gap-8 text-left sm:grid-cols-[minmax(150px,212px)_minmax(0,1fr)] sm:gap-10">
+          <div className="w-[168px] sm:w-[212px]">
             <Image
               src="/deputy.png"
               alt="Repo Deputy holding a code audit report"
-              width={1254}
-              height={1254}
+              width={500}
+              height={500}
               priority
               sizes="(min-width: 640px) 212px, 168px"
-              className="h-full w-full object-cover mix-blend-multiply"
+              className="h-auto w-full object-contain drop-shadow-[0_18px_28px_rgba(0,0,0,0.35)]"
             />
           </div>
-          <h1 className="headline-fraunces m-0 mb-6 text-[clamp(40px,5.4vw,64px)] font-normal font-[family-name:var(--font-display)]">
-            Keep your repo <em className="italic text-gold">honest</em>
-            <br />
-            after the AI rides through.
-          </h1>
-          <p className="mx-auto max-w-[560px] text-pretty text-[19px] leading-[1.55] text-text-soft">
-            Repo Deputy audits any GitHub repository for duplication, architectural drift,
-            circular dependencies, complexity, and stale documentation — then deputizes a
-            pull request to clean it up.
-          </p>
+          <div>
+            <h1 className="headline-fraunces m-0 mb-6 text-[clamp(40px,5.4vw,64px)] font-normal font-[family-name:var(--font-display)]">
+              Keep your repo <em className="italic text-gold">honest</em>
+              <br />
+              after the AI rides through.
+            </h1>
+            <p className="max-w-[560px] text-pretty text-[19px] leading-[1.55] text-text-soft">
+              Repo Deputy audits any GitHub repository for duplication, architectural
+              drift, circular dependencies, complexity, and stale documentation — then
+              deputizes a pull request to clean it up.
+            </p>
+          </div>
         </div>
 
         <form className="relative mx-auto max-w-[680px]" onSubmit={submit}>

@@ -64,20 +64,14 @@ export function Scanning({ repo, onComplete }: Props) {
 
         <div className="mx-auto flex max-w-[820px] flex-col items-center gap-10">
           <div className="relative mx-auto flex h-[300px] w-[300px] max-w-full items-center justify-center">
-            <div
-              aria-hidden
-              className="absolute inset-4 rounded-full bg-gold/20 blur-2xl"
+            <Image
+              src="/star.png"
+              alt=""
+              width={1254}
+              height={1254}
+              sizes="300px"
+              className="spin-slow absolute inset-0 h-full w-full object-contain drop-shadow-[0_14px_24px_rgba(0,0,0,0.3)]"
             />
-            <div className="spin-slow absolute inset-0 overflow-hidden rounded-full border border-gold/35 bg-paper shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-              <Image
-                src="/star.png"
-                alt=""
-                width={1254}
-                height={1254}
-                sizes="300px"
-                className="h-full w-full object-cover mix-blend-multiply"
-              />
-            </div>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1">
               <div className="absolute h-[120px] w-[120px] rounded-full border border-line bg-ink shadow-[0_4px_18px_-6px_rgba(0,0,0,0.35),inset_0_0_0_6px_var(--color-ink)]" />
               <div className="relative z-[1] font-[family-name:var(--font-serif)] text-[44px] font-medium leading-none tabular-nums text-text [font-variation-settings:'opsz'_144]">

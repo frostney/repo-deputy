@@ -61,37 +61,51 @@ export function Scanning({ repo, onComplete }: Props) {
           </div>
         </div>
 
-        <div className="mx-auto max-w-[820px]">
-          <div className="relative mb-9 border border-line bg-ink-2 p-[22px_28px_24px] font-[family-name:var(--font-mono)] outline outline-1 outline-line outline-offset-[4px]">
-            <div className="mb-3.5 flex items-center justify-between border-b border-dashed border-line pb-3.5 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.3em] text-text-mute">
-              <span className="text-gold tracking-[0.4em]">▼ TELEGRAM ▼</span>
-              <span className="tabular-nums">
-                {new Date().toTimeString().slice(0, 8)}
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-base leading-[1.2]">
-              <div className="flex-1 whitespace-nowrap text-gold">
-                <span className="text-text-mute mx-1">[</span>
-                <span className="tracking-[-0.03em]">
-                  {"█".repeat(Math.round((pct / 100) * 30))}
-                  <span className="text-text-mute opacity-45">
-                    {"·".repeat(30 - Math.round((pct / 100) * 30))}
-                  </span>
-                </span>
-                <span className="text-text-mute mx-1">]</span>
-              </div>
-              <div className="poster-soft min-w-[80px] text-right font-[family-name:var(--font-serif)] text-[32px] tabular-nums tracking-[-0.02em] text-text">
+        <div className="mx-auto flex max-w-[820px] flex-col items-center gap-10">
+          <div className="relative mx-auto flex h-[300px] w-[300px] max-w-full items-center justify-center">
+            <svg
+              viewBox="-50 -50 100 100"
+              className="spin-slow block h-full w-full drop-shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+              role="img"
+              aria-label="Sheriff's badge spinning while scanning"
+            >
+              <title>Scanning badge</title>
+              <defs>
+                <radialGradient id="badgeGlow" cx="0" cy="0" r="50">
+                  <stop
+                    offset="0%"
+                    stopColor="var(--color-gold-warm)"
+                    stopOpacity="0.45"
+                  />
+                  <stop offset="60%" stopColor="var(--color-gold)" stopOpacity="0.18" />
+                  <stop offset="100%" stopColor="var(--color-gold)" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="0" cy="0" r="46" fill="url(#badgeGlow)" />
+              <polygon
+                points="0,-44 11,-14 42,-14 17,5 26,35 0,16 -26,35 -17,5 -42,-14 -11,-14"
+                fill="var(--color-gold)"
+                stroke="var(--color-gold-warm)"
+                strokeWidth="0.8"
+                strokeLinejoin="round"
+              />
+              <polygon
+                points="0,-30 7.5,-9.5 28,-9.5 11.5,3 17.5,23 0,11 -17.5,23 -11.5,3 -28,-9.5 -7.5,-9.5"
+                fill="none"
+                stroke="rgba(0,0,0,0.35)"
+                strokeWidth="0.8"
+                strokeLinejoin="round"
+              />
+              <circle cx="0" cy="0" r="3.2" fill="rgba(0,0,0,0.4)" />
+            </svg>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1">
+              <div className="absolute h-[120px] w-[120px] rounded-full border border-line bg-ink shadow-[0_4px_18px_-6px_rgba(0,0,0,0.35),inset_0_0_0_6px_var(--color-ink)]" />
+              <div className="relative z-[1] font-[family-name:var(--font-serif)] text-[44px] font-medium leading-none tabular-nums text-text [font-variation-settings:'opsz'_144]">
                 {Math.round(pct)}%
               </div>
-            </div>
-            <div className="mt-3.5 flex items-center gap-3 text-xs tracking-[0.05em] text-text-soft">
-              <span className="font-semibold text-gold">
-                {step >= SCAN_CHECKS.length ? "complete" : SCAN_CHECKS[step]?.name}
-              </span>
-              <span>·</span>
-              <span>
-                step {Math.min(step + 1, SCAN_CHECKS.length)} of {SCAN_CHECKS.length}
-              </span>
+              <div className="relative z-[1] font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.25em] text-text-mute">
+                Auditing
+              </div>
             </div>
           </div>
 

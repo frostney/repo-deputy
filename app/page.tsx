@@ -8,6 +8,7 @@ import { PRCreate } from "./_components/pr-create";
 import { PROpened } from "./_components/pr-opened";
 import { Results } from "./_components/results";
 import { Scanning } from "./_components/scanning";
+import { ThemeToggle } from "./_components/theme-toggle";
 
 type Screen = "landing" | "scan" | "results" | "pr" | "done";
 type PR = { count: number; files: number; branch: string; title: string };
@@ -39,6 +40,7 @@ export default function Home() {
 
   return (
     <div className="relative z-[1] flex min-h-screen flex-col">
+      <ThemeToggle />
       {screen === "landing" && <Landing onAudit={startAudit} />}
       {screen === "scan" && (
         <Scanning repo={repo} onComplete={() => setScreen("results")} />

@@ -37,6 +37,27 @@ body {
   padding: 0;
 }
 
+[data-theme="light"] {
+  --color-ink: #e9d9b8;
+  --color-ink-2: #ddc9a0;
+  --color-ink-3: #cfb888;
+  --color-ink-4: #b89a6a;
+  --color-line: #6b4a23;
+  --color-line-soft: #a88254;
+  --color-text: #1f1208;
+  --color-text-soft: #5a3a18;
+  --color-text-mute: #7a5722;
+  --color-gold: #7a4a0f;
+  --color-gold-warm: #a86a1a;
+  --color-gold-deep: #4a2a06;
+  --color-oxblood: #6a1a14;
+  --color-oxblood-soft: #8a2218;
+  --color-rust: #8a3e1a;
+  --color-sage: #3f5a30;
+  --color-sage-warm: #4f6e3f;
+  --color-slate-western: #4a3a22;
+}
+
 body {
   font-family: var(--font-sans);
   background: var(--color-ink);
@@ -46,6 +67,9 @@ body {
   font-feature-settings: "ss01", "cv11";
   min-height: 100vh;
   overflow-x: hidden;
+  transition:
+    background 0.3s,
+    color 0.3s;
 }
 
 body::before {
@@ -56,6 +80,18 @@ body::before {
   background-image: radial-gradient(rgba(212, 162, 76, 0.04) 1px, transparent 1px);
   background-size: 22px 22px;
   z-index: 0;
+}
+
+[data-theme="light"] body::before {
+  background-image:
+    radial-gradient(rgba(80, 50, 15, 0.09) 1px, transparent 1px),
+    radial-gradient(rgba(80, 50, 15, 0.04) 1px, transparent 1px);
+  background-size:
+    22px 22px,
+    7px 7px;
+  background-position:
+    0 0,
+    11px 11px;
 }
 
 .headline-fraunces {
@@ -176,5 +212,14 @@ body::before {
 @keyframes fade-in {
   from {
     opacity: 0;
+  }
+}
+
+.spin-slow {
+  animation: spin-slow 24s linear infinite;
+}
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
   }
 }

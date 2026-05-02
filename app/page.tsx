@@ -6,31 +6,25 @@ import { IssueDetail } from "./_components/issue-detail";
 import { Landing } from "./_components/landing";
 import { PRCreate } from "./_components/pr-create";
 import { PROpened } from "./_components/pr-opened";
+import type { PullRequestDraft } from "./_components/pr-data";
 import { Results } from "./_components/results";
 import { Scanning } from "./_components/scanning";
 import { ThemeToggle } from "./_components/theme-toggle";
 
 type Screen = "landing" | "scan" | "results" | "pr" | "done";
-type PR = { count: number; files: number; branch: string; title: string };
-
-const DEFAULT_PR: PR = {
-  count: 4,
-  files: 8,
-  branch: "repo-deputy/audit-00482",
-  title: "chore: deputize · clean up drift, dupes, and stale docs",
-};
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("landing");
   const [repo, setRepo] = useState("vercel/next.js");
   const [issue, setIssue] = useState<Finding | null>(null);
   const [preselected, setPreselected] = useState<string[] | null>(null);
-  const [pr, setPr] = useState<PR | null>(null);
+  const [pr, setPr] = useState<PullRequestDraft | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   const startAudit = (r: string) => {
     setRepo(r);
     setScanResult(null);
+    setPr(null);
     setScreen("scan");
   };
 
@@ -38,6 +32,7 @@ export default function Home() {
     setScreen("landing");
     setIssue(null);
     setPreselected(null);
+    setPr(null);
   };
 
   return (
@@ -68,6 +63,7 @@ export default function Home() {
       {screen === "pr" && (
         <PRCreate
           repo={repo}
+          scanResult={scanResult}
           onBack={() => setScreen("results")}
           preselected={preselected}
           onSubmit={(p) => {
@@ -76,10 +72,10 @@ export default function Home() {
           }}
         />
       )}
-      {screen === "done" && (
+      {screen === "done" && pr && (
         <PROpened
           repo={repo}
-          pr={pr ?? DEFAULT_PR}
+          pr={pr}
           onBack={() => setScreen("results")}
           onView={goLanding}
         />

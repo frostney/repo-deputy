@@ -9,6 +9,7 @@ import {
   type ScanResult,
 } from "./data";
 import { CodeText, Icon } from "./icons";
+import { dashboardCategoryForFinding } from "./pr-data";
 import { ScoreRing } from "./score-ring";
 
 type Props = {
@@ -369,7 +370,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
 }
 
 function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
-  const category = dashboardCategory(finding);
+  const category = dashboardCategoryForFinding(finding);
   return {
     id: finding.id,
     severity: finding.severity,
@@ -380,23 +381,6 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
     impact: finding.severity === "high" ? "high" : finding.severity,
     effort: "medium",
   };
-}
-
-function dashboardCategory(finding: ScanResult["findings"][number]) {
-  const text = `${finding.id} ${finding.title} ${finding.category}`.toLowerCase();
-  if (text.includes("duplicate") || text.includes("dupe")) {
-    return "Duplication";
-  }
-  if (text.includes("complexity") || text.includes("health")) {
-    return "Complexity";
-  }
-  if (text.includes("cycle")) {
-    return "Cycles";
-  }
-  if (finding.category === "docs-drift") {
-    return "Docs";
-  }
-  return "Drift";
 }
 
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {

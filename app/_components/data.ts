@@ -9,6 +9,9 @@ export type Finding = {
   title: string;
   path: string;
   description: string;
+  evidence?: string[];
+  files?: string[];
+  suggestedFix?: string;
   impact: string;
   effort: string;
 };

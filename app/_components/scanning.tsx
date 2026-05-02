@@ -56,7 +56,11 @@ export function Scanning({ repo, onComplete }: Props) {
           signal: controller.signal,
         });
         if (!response.ok) {
-          throw new Error(`Scan request failed with ${response.status}`);
+          const payload = await response.json().catch(() => null);
+          throw new Error(
+            readScanErrorMessage(payload) ??
+              `Scan request failed with ${response.status}`,
+          );
         }
         setScanResult((await response.json()) as ScanResult);
       } catch (error) {
@@ -295,6 +299,22 @@ function scanErrorResult(repo: string, error: unknown): ScanResult {
       },
     ],
   };
+}
+
+function readScanErrorMessage(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as { summary?: unknown; message?: unknown };
+  if (typeof record.summary === "string" && record.summary) {
+    return record.summary;
+  }
+  if (typeof record.message === "string" && record.message) {
+    return record.message;
+  }
+
+  return null;
 }
 
 function progressLogLines(repo: string, step: number): LogLine[] {

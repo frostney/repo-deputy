@@ -9,6 +9,17 @@ type Props = {
   onAudit: (repo: string) => void;
 };
 
+type RepoCheckResponse =
+  | {
+      ok: true;
+      repo: string;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+const DEFAULT_REPO = "vercel/next.js";
 const SAMPLE_REPOS = ["vercel/next.js", "facebook/react", "honojs/hono"];
 
 const FEATURES: Array<{
@@ -51,6 +62,8 @@ const FEATURES: Array<{
 
 export function Landing({ onAudit }: Props) {
   const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+  const [isChecking, setIsChecking] = useState(false);
   const [stats, setStats] = useState<ScanStats | null>(null);
   const visibleStats = stats?.available ? stats : null;
 
@@ -77,7 +90,39 @@ export function Landing({ onAudit }: Props) {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onAudit(url.trim() || "vercel/next.js");
+    void beginAudit(url);
+  };
+
+  const beginAudit = async (value: string) => {
+    const repo = normalizeRepoInput(value) || DEFAULT_REPO;
+    setUrl(repo);
+    setError("");
+    setIsChecking(true);
+
+    try {
+      const params = new URLSearchParams({ repo });
+      const response = await fetch(`/api/repo?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const result = (await response
+        .json()
+        .catch(() => null)) as RepoCheckResponse | null;
+
+      if (!response.ok || !result?.ok) {
+        setError(
+          result && "message" in result
+            ? result.message
+            : "Could not confirm whether this repository is public.",
+        );
+        return;
+      }
+
+      onAudit(result.repo);
+    } catch {
+      setError("Could not confirm whether this repository is public. Please try again.");
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   return (
@@ -102,29 +147,64 @@ export function Landing({ onAudit }: Props) {
               after the AI rides through.
             </h1>
             <p className="max-w-[560px] text-pretty text-[19px] leading-[1.55] text-text-soft">
-              Repo Deputy audits any GitHub repository for duplication, architectural
+              Repo Deputy audits public GitHub repositories for duplication, architectural
               drift, circular dependencies, complexity, and stale documentation — then
               deputizes a pull request to clean it up.
             </p>
           </div>
         </div>
 
-        <form className="relative mx-auto max-w-[680px]" onSubmit={submit}>
+        <form
+          className="relative mx-auto max-w-[680px]"
+          onSubmit={submit}
+          aria-busy={isChecking}
+        >
           <div className="flex items-center gap-3 rounded-[14px] border border-line bg-ink-2 py-2 pr-2 pl-5 shadow-[0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-12px_rgba(0,0,0,0.6)] transition-all focus-within:border-gold focus-within:ring-4 focus-within:ring-gold/15">
             <span className="shrink-0 text-text-mute">
               <Icon name="github" size={16} />
             </span>
+            <label htmlFor="repo-input" className="sr-only">
+              Public GitHub repository
+            </label>
             <input
+              id="repo-input"
+              name="repo"
               type="text"
               value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="github.com/owner/repo  —  paste a URL to deputize"
+              onChange={(event) => {
+                setUrl(normalizeRepoInput(event.target.value, "typing"));
+                setError("");
+              }}
+              placeholder="owner/repo  —  public GitHub repository"
+              aria-describedby={error ? "repo-help repo-error" : "repo-help"}
+              aria-invalid={Boolean(error)}
               className="min-w-0 flex-1 border-0 bg-transparent py-3.5 font-[family-name:var(--font-mono)] text-[15px] text-text outline-none placeholder:text-text-mute"
             />
-            <button type="submit" className="btn btn-primary shrink-0">
-              Run audit <Icon name="arrow-right" size={14} />
+            <button
+              type="submit"
+              className="btn btn-primary shrink-0"
+              disabled={isChecking}
+            >
+              {isChecking ? "Checking" : "Run audit"}{" "}
+              <Icon name="arrow-right" size={14} />
             </button>
           </div>
+
+          <div
+            id="repo-help"
+            className="mt-3 text-center font-[family-name:var(--font-mono)] text-[11px] text-text-mute"
+          >
+            Public repositories only. Enter <code>owner/repo</code> or paste a GitHub URL.
+          </div>
+          {error ? (
+            <div
+              id="repo-error"
+              role="alert"
+              className="mt-3 rounded-md border border-oxblood/40 bg-oxblood/10 px-4 py-3 text-center text-sm text-oxblood-soft"
+            >
+              {error}
+            </div>
+          ) : null}
 
           <div className="mt-[18px] flex flex-wrap items-center justify-center gap-3">
             <span className="font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.15em] text-text-mute">
@@ -136,7 +216,7 @@ export function Landing({ onAudit }: Props) {
                 key={repo}
                 onClick={() => {
                   setUrl(repo);
-                  onAudit(repo);
+                  void beginAudit(repo);
                 }}
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-line bg-ink-2 px-3 py-1.5 font-[family-name:var(--font-mono)] text-xs text-text-soft transition-all hover:border-gold hover:text-gold"
               >
@@ -239,6 +319,39 @@ export function Landing({ onAudit }: Props) {
       </div>
     </main>
   );
+}
+
+function normalizeRepoInput(value: string, mode: "submit" | "typing" = "submit") {
+  const trimmed = mode === "typing" ? value.trimStart() : value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const maybeUrl = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(maybeUrl);
+    if (url.hostname === "github.com" || url.hostname === "www.github.com") {
+      const [owner, rawRepo] = url.pathname.split("/").filter(Boolean);
+      const repo = rawRepo?.replace(/\.git$/i, "");
+      if (owner && repo) {
+        return `${owner}/${repo}`;
+      }
+      if (mode === "typing" && owner) {
+        return url.pathname.endsWith("/") ? `${owner}/` : owner;
+      }
+    }
+  } catch {
+    // Fall through to prefix stripping for partial input.
+  }
+
+  const withoutGithubPrefix = trimmed
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
+    .replace(/^(www\.)?github\.com\//i, "")
+    .replace(/\.git$/i, "");
+
+  return mode === "typing"
+    ? withoutGithubPrefix
+    : withoutGithubPrefix.replace(/\/$/u, "");
 }
 
 function formatCounter(value: number) {

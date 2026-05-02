@@ -1,4 +1,8 @@
 import { runRepoScan } from "@/lib/scan/repo";
+import {
+  checkPublicGitHubRepository,
+  type PublicGitHubRepoCheck,
+} from "@/lib/scan/public-repo";
 import type { ReviewFocus } from "@/lib/review/types";
 import { recordScanRun } from "@/lib/scan/stats";
 
@@ -11,9 +15,20 @@ export async function GET(request: Request) {
   const focus = parseFocus(url.searchParams.get("focus"));
   const useMemory = url.searchParams.get("memory") === "true";
   const useAi = url.searchParams.get("ai") !== "false";
-  const repoUrl = url.searchParams.get("repo") || undefined;
+  let repoUrl = url.searchParams.get("repo") || undefined;
   const revision = url.searchParams.get("revision") || undefined;
   const runExternalTools = url.searchParams.get("tools") === "true";
+  if (repoUrl) {
+    const repoCheck = await checkPublicGitHubRepository(repoUrl);
+    if (repoCheck.ok) {
+      repoUrl = repoCheck.repo;
+    } else if (repoCheck.reason !== "unsupported") {
+      return Response.json(buildRepoCheckFailure(repoUrl, repoCheck), {
+        status: repoCheck.status,
+      });
+    }
+  }
+
   const result = await runRepoScan({
     focus,
     repoUrl,
@@ -57,4 +72,37 @@ function parseFocus(value: string | null): ReviewFocus {
   }
 
   return "full";
+}
+
+function buildRepoCheckFailure(
+  repo: string,
+  repoCheck: Extract<PublicGitHubRepoCheck, { ok: false }>,
+) {
+  return {
+    repo: repoCheck.repo ?? repo,
+    repoUrl: repoCheck.repoUrl,
+    scannedFiles: 0,
+    mergeConfidence: "needs-human-review",
+    summary: repoCheck.message,
+    findings: [],
+    markdown: "",
+    memoryUsed: [],
+    toolResults: [
+      {
+        id: "repo-public-check",
+        name: "Repository availability",
+        command: repoCheck.command ?? "GET https://api.github.com/repos/:owner/:repo",
+        status: "error",
+        exitCode: null,
+        summary: repoCheck.message,
+        issues: [
+          {
+            id: "repo-public-check-failed",
+            title: "Repository is not publicly audit-ready",
+            message: repoCheck.message,
+          },
+        ],
+      },
+    ],
+  };
 }

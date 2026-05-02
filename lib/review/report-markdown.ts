@@ -32,6 +32,23 @@ export function reportToMarkdown(
     lines.push("");
   }
 
+  if (report.toolResults?.length) {
+    lines.push("### Tool checks", "");
+    for (const result of report.toolResults) {
+      lines.push(
+        `- ${result.name}: ${formatToolStatus(result.status)}${
+          result.exitCode === null ? "" : ` (exit ${result.exitCode})`
+        } - ${result.summary}`,
+      );
+      for (const issue of result.issues.slice(0, 5)) {
+        lines.push(
+          `  - ${issue.path ? `${issue.path}${issue.line ? `:${issue.line}` : ""}: ` : ""}${issue.title}`,
+        );
+      }
+    }
+    lines.push("");
+  }
+
   lines.push("### Suggested next steps", "");
   if (report.findings.length === 0) {
     lines.push("- No docs or code drift action needed from Repo Deputy.");
@@ -101,6 +118,19 @@ function formatMergeConfidence(value: DeputyReport["mergeConfidence"]) {
     return "Needs docs update";
   }
   return "Needs human review";
+}
+
+function formatToolStatus(value: string) {
+  if (value === "passed") {
+    return "passed";
+  }
+  if (value === "failed") {
+    return "found issues";
+  }
+  if (value === "skipped") {
+    return "skipped";
+  }
+  return "error";
 }
 
 function listOrDash(items: string[]) {

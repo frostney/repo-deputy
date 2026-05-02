@@ -9,17 +9,30 @@ export async function GET(request: Request) {
   const focus = parseFocus(url.searchParams.get("focus"));
   const useMemory = url.searchParams.get("memory") === "true";
   const useAi = url.searchParams.get("ai") !== "false";
-  const result = await runRepoScan({ focus, useAi, useMemory });
+  const repoUrl = url.searchParams.get("repo") || undefined;
+  const revision = url.searchParams.get("revision") || undefined;
+  const runExternalTools = url.searchParams.get("tools") === "true";
+  const result = await runRepoScan({
+    focus,
+    repoUrl,
+    revision,
+    useAi,
+    useMemory,
+    runExternalTools,
+  });
 
   return Response.json({
     repo: result.context.repo,
+    repoUrl: result.context.sandbox?.repoUrl,
     rootPath: result.context.rootPath,
-    scannedFiles: result.context.changedFiles.length,
+    sandbox: result.context.sandbox,
+    scannedFiles: result.context.scannedFiles ?? result.context.changedFiles.length,
     mergeConfidence: result.report.mergeConfidence,
     summary: result.report.summary,
     findings: result.report.findings,
     markdown: result.markdown,
     memoryUsed: result.report.memoryUsed ?? [],
+    toolResults: result.report.toolResults ?? [],
   });
 }
 

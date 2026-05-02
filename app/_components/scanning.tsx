@@ -2,23 +2,29 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import type { LogLine, ScanResult } from "./data";
 import { CodeText, Icon, Sym } from "./icons";
-import { LOG_LINES, SCAN_CHECKS } from "./data";
+import { SCAN_CHECKS } from "./data";
 
 type Props = {
   repo: string;
-  onComplete: () => void;
+  onComplete: (result: ScanResult) => void;
 };
 
 export function Scanning({ repo, onComplete }: Props) {
   const [step, setStep] = useState(0);
   const [pct, setPct] = useState(0);
   const [logIdx, setLogIdx] = useState(0);
+  const [scanDone, setScanDone] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const logLines = scanResult
+    ? resultLogLines(repo, scanResult)
+    : progressLogLines(repo, step);
 
   useEffect(() => {
     if (step >= SCAN_CHECKS.length) {
-      const t = setTimeout(() => onComplete(), 700);
-      return () => clearTimeout(t);
+      setPct(100);
+      return;
     }
     const dur = SCAN_CHECKS[step].duration;
     const start = Date.now();
@@ -33,16 +39,77 @@ export function Scanning({ repo, onComplete }: Props) {
       clearInterval(tick);
       clearTimeout(advance);
     };
-  }, [step, onComplete]);
+  }, [step]);
 
   useEffect(() => {
-    const i = setInterval(() => setLogIdx((x) => Math.min(x + 1, LOG_LINES.length)), 950);
-    return () => clearInterval(i);
-  }, []);
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      repo,
+      focus: "full",
+      ai: "false",
+      memory: "false",
+    });
 
-  const stateOf = (i: number): "done" | "active" | "pending" =>
-    i < step ? "done" : i === step ? "active" : "pending";
-  const visibleLogs = LOG_LINES.slice(0, logIdx).slice(-5);
+    async function scan() {
+      try {
+        const response = await fetch(`/api/scan?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Scan request failed with ${response.status}`);
+        }
+        setScanResult((await response.json()) as ScanResult);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setScanResult(scanErrorResult(repo, error));
+      } finally {
+        if (!controller.signal.aborted) {
+          setScanDone(true);
+        }
+      }
+    }
+
+    scan();
+    return () => controller.abort();
+  }, [repo]);
+
+  useEffect(() => {
+    if (!scanDone) {
+      return;
+    }
+
+    setStep(SCAN_CHECKS.length);
+    setPct(100);
+  }, [scanDone]);
+
+  useEffect(() => {
+    if (step < SCAN_CHECKS.length || !scanDone || !scanResult) {
+      return;
+    }
+
+    const timer = setTimeout(() => onComplete(scanResult), 700);
+    return () => clearTimeout(timer);
+  }, [step, scanDone, scanResult, onComplete]);
+
+  useEffect(() => {
+    const i = setInterval(() => setLogIdx((x) => Math.min(x + 1, logLines.length)), 700);
+    return () => clearInterval(i);
+  }, [logLines.length]);
+
+  const failedStep = scanResult ? failedStepIndex(scanResult) : null;
+  const stateOf = (i: number): "done" | "active" | "pending" | "error" => {
+    if (failedStep !== null) {
+      if (i < failedStep) {
+        return "done";
+      }
+      return i === failedStep ? "error" : "pending";
+    }
+
+    return i < step ? "done" : i === step ? "active" : "pending";
+  };
+  const visibleLogs = logLines.slice(0, Math.max(logIdx, 1)).slice(-5);
 
   return (
     <main className="flex flex-1 flex-col py-16 pb-24">
@@ -58,7 +125,9 @@ export function Scanning({ repo, onComplete }: Props) {
             Deputizing the <em className="italic text-gold">codebase</em>…
           </h1>
           <div className="text-base text-text-soft">
-            Hold tight. We're reading every file twice.
+            {scanDone
+              ? scanResult?.summary
+              : "Starting an isolated shallow checkout and analyzer run."}
           </div>
         </div>
 
@@ -110,13 +179,17 @@ export function Scanning({ repo, onComplete }: Props) {
                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
                       st === "done"
                         ? "bg-sage/15 text-sage-warm"
-                        : st === "active"
-                          ? "bg-gold/15 text-gold"
-                          : "bg-ink-4 text-text-mute"
+                        : st === "error"
+                          ? "bg-oxblood/15 text-oxblood-soft"
+                          : st === "active"
+                            ? "bg-gold/15 text-gold"
+                            : "bg-ink-4 text-text-mute"
                     }`}
                   >
                     {st === "done" ? (
                       <Icon name="check" size={14} />
+                    ) : st === "error" ? (
+                      <Icon name="x" size={14} />
                     ) : st === "active" ? (
                       <span className="scan-spinner-mono" />
                     ) : (
@@ -133,16 +206,20 @@ export function Scanning({ repo, onComplete }: Props) {
                     className={`font-[family-name:var(--font-display)] text-sm italic tracking-[0.02em] ${
                       st === "done"
                         ? "text-sage-warm"
-                        : st === "active"
-                          ? "text-gold"
-                          : "text-text-mute"
+                        : st === "error"
+                          ? "text-oxblood-soft"
+                          : st === "active"
+                            ? "text-gold"
+                            : "text-text-mute"
                     }`}
                   >
                     {st === "done"
                       ? "rounded up"
-                      : st === "active"
-                        ? "on patrol"
-                        : "in line"}
+                      : st === "error"
+                        ? "blocked"
+                        : st === "active"
+                          ? "on patrol"
+                          : "in line"}
                   </div>
                 </div>
               );
@@ -200,4 +277,110 @@ export function Scanning({ repo, onComplete }: Props) {
       </div>
     </main>
   );
+}
+
+function scanErrorResult(repo: string, error: unknown): ScanResult {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return {
+    repo,
+    scannedFiles: 0,
+    mergeConfidence: "needs-human-review",
+    summary: message,
+    findings: [],
+    markdown: "",
+    toolResults: [
+      {
+        id: "scan-request",
+        name: "Scan request",
+        command: "GET /api/scan",
+        status: "error",
+        exitCode: null,
+        summary: message,
+        issues: [],
+      },
+    ],
+  };
+}
+
+function progressLogLines(repo: string, step: number): LogLine[] {
+  const visibleChecks = SCAN_CHECKS.slice(0, Math.min(step + 1, SCAN_CHECKS.length));
+
+  return [
+    {
+      t: "info",
+      text: `Requesting sandbox scan for ${repo}`,
+    },
+    ...visibleChecks.map((check, index) => ({
+      t: index < step ? ("ok" as const) : ("info" as const),
+      text: `${index < step ? "✓" : "→"} ${check.name} · ${check.meta}`,
+    })),
+  ];
+}
+
+function resultLogLines(repo: string, result: ScanResult): LogLine[] {
+  const lines: LogLine[] = [
+    {
+      t: result.toolResults.some(
+        (tool) => tool.id === "sandbox" && tool.status === "error",
+      )
+        ? "err"
+        : "ok",
+      text: result.repoUrl
+        ? `Sandbox request for ${result.repoUrl}`
+        : `Local scan for ${repo}`,
+    },
+  ];
+
+  for (const tool of result.toolResults) {
+    lines.push({
+      t:
+        tool.status === "passed"
+          ? "ok"
+          : tool.status === "failed"
+            ? "warn"
+            : tool.status === "skipped"
+              ? "info"
+              : "err",
+      text: `${tool.name}: ${tool.summary}`,
+    });
+  }
+
+  lines.push({
+    t: result.mergeConfidence === "safe" ? "ok" : "warn",
+    text: `Report ready · ${result.findings.length} finding${
+      result.findings.length === 1 ? "" : "s"
+    }`,
+  });
+
+  return lines;
+}
+
+function failedStepIndex(result: ScanResult) {
+  const failedTool = result.toolResults.find((tool) => tool.status === "error");
+
+  if (!failedTool) {
+    return null;
+  }
+
+  if (failedTool.id === "sandbox" || failedTool.id === "scan-request") {
+    return 0;
+  }
+  if (failedTool.id === "git-clone") {
+    return 1;
+  }
+  if (failedTool.id === "sandbox-bun-setup") {
+    return 2;
+  }
+  if (failedTool.id === "fallow") {
+    return 3;
+  }
+  if (failedTool.id === "markdownlint") {
+    return 4;
+  }
+  if (failedTool.id === "markdown-link-check") {
+    return 5;
+  }
+
+  return SCAN_CHECKS.length - 1;
 }

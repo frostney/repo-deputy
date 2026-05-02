@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { parseDeputyCommand } from "@/lib/commands/deputy-command";
 import { runCodeDriftChecks } from "@/lib/review/code-drift";
 import { runDocsDriftChecks } from "@/lib/review/docs-drift";
-import { runFallowAnalysis } from "@/lib/review/fallow-placeholder";
+import { runFallowAnalysis } from "@/lib/review/fallow";
 import { buildFallbackReport } from "@/lib/review/generate-report";
 import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
 import { SEEDED_DEMO_FINDINGS } from "@/lib/review/mock-findings";
@@ -121,6 +121,16 @@ export function createRepoDeputyMcpServer() {
           .string()
           .optional()
           .describe("Repository root. Defaults to the MCP server working directory."),
+        repoUrl: z
+          .string()
+          .optional()
+          .describe(
+            "Public git URL or GitHub owner/repo shorthand. When set, Repo Deputy uses Vercel Sandbox with a depth=1 git source instead of rootPath.",
+          ),
+        revision: z
+          .string()
+          .optional()
+          .describe("Optional branch, tag, or commit to check out in the sandbox."),
         focus: reviewFocusSchema.default("full"),
         useAi: z
           .boolean()
@@ -130,24 +140,49 @@ export function createRepoDeputyMcpServer() {
           .boolean()
           .default(false)
           .describe("Read/write optional Mubit repo memory when configured."),
+        runExternalTools: z
+          .boolean()
+          .default(false)
+          .describe(
+            "For local rootPath scans, also run external CLI tools such as Fallow. Sandbox repoUrl scans always run the sandbox toolchain.",
+          ),
       },
       annotations: {
         readOnlyHint: false,
         openWorldHint: true,
       },
     },
-    async ({ rootPath, focus, useAi, useMemory }) => {
-      const result = await runRepoScan({ rootPath, focus, useAi, useMemory });
+    async ({
+      rootPath,
+      repoUrl,
+      revision,
+      focus,
+      useAi,
+      useMemory,
+      runExternalTools,
+    }) => {
+      const result = await runRepoScan({
+        rootPath,
+        repoUrl,
+        revision,
+        focus,
+        useAi,
+        useMemory,
+        runExternalTools,
+      });
 
       return jsonResult({
         repo: result.context.repo,
+        repoUrl: result.context.sandbox?.repoUrl,
         rootPath: result.context.rootPath,
-        scannedFiles: result.context.changedFiles.length,
+        sandbox: result.context.sandbox,
+        scannedFiles: result.context.scannedFiles ?? result.context.changedFiles.length,
         mergeConfidence: result.report.mergeConfidence,
         summary: result.report.summary,
         findings: result.report.findings,
         markdown: result.markdown,
         memoryUsed: result.report.memoryUsed ?? [],
+        toolResults: result.report.toolResults ?? [],
       });
     },
   );
@@ -202,6 +237,7 @@ export function createRepoDeputyMcpServer() {
         findings,
         markdown: "",
         memoryUsed,
+        toolResults: [],
       };
       const markdown = reportToMarkdown(report, { focus });
 
@@ -307,6 +343,7 @@ function createFixtureReviewContext(input: {
       ? { path: ".env.example", content: input.envExampleContent }
       : null,
     memoryInsights: [],
+    toolResults: [],
   };
 }
 

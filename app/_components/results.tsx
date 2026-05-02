@@ -1,12 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORIES, type Finding, FINDINGS } from "./data";
+import {
+  CATEGORIES,
+  type CategoryRow,
+  type Finding,
+  FINDINGS,
+  type ScanResult,
+} from "./data";
 import { CodeText, Icon } from "./icons";
 import { ScoreRing } from "./score-ring";
 
 type Props = {
   repo: string;
+  scanResult: ScanResult | null;
   onOpenIssue: (finding: Finding) => void;
   onPropose: () => void;
   onHome: () => void;
@@ -14,12 +21,36 @@ type Props = {
 
 const TABS = ["All", "Drift", "Duplication", "Cycles", "Complexity", "Docs"];
 
-export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
+export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState("All");
-  const overall = 76;
+  const liveFindings = scanResult ? scanResult.findings.map(toDashboardFinding) : null;
+  const findings = scanResult ? (liveFindings ?? []) : FINDINGS;
+  const categories = scanResult ? categoriesFromFindings(findings) : CATEGORIES;
+  const overall = scanResult ? scoreFromConfidence(scanResult.mergeConfidence) : 76;
+  const criticalCount = findings.filter(
+    (finding) => finding.severity === "critical" || finding.severity === "high",
+  ).length;
+  const summaryRows = scanResult
+    ? [
+        { label: "Source", value: scanResult.repoUrl ? "Sandbox" : "Local" },
+        { label: "Files scanned", value: scanResult.scannedFiles.toLocaleString() },
+        { label: "Findings", value: String(scanResult.findings.length) },
+        {
+          label: "Tool checks",
+          value: `${scanResult.toolResults.filter((tool) => tool.status !== "passed").length} / ${scanResult.toolResults.length}`,
+        },
+        { label: "Verdict", value: verdictLabel(scanResult.mergeConfidence) },
+      ]
+    : [
+        { label: "Branch", value: <code className="code-pill">canary</code> },
+        { label: "Commit", value: <code className="code-pill">9f4e21a</code> },
+        { label: "Lines of code", value: "412,887" },
+        { label: "Languages", value: "TS · JS · MDX" },
+        { label: "Auto-fixable", value: <span className="text-sage-warm">31 / 52</span> },
+      ];
 
-  const filtered = tab === "All" ? FINDINGS : FINDINGS.filter((f) => f.category === tab);
+  const filtered = tab === "All" ? findings : findings.filter((f) => f.category === tab);
 
   return (
     <main className="flex flex-1 flex-col py-10 pb-24">
@@ -60,22 +91,29 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
             </h2>
             <div className="mt-1 flex flex-wrap gap-5 font-[family-name:var(--font-mono)] text-xs text-text-mute max-lg:justify-center">
               <span>
-                <strong className="font-medium text-text">52</strong> findings
+                <strong className="font-medium text-text">{findings.length}</strong>{" "}
+                findings
               </span>
               <span>
-                <strong className="font-medium text-text">3</strong> critical
+                <strong className="font-medium text-text">{criticalCount}</strong> high
               </span>
               <span>
-                <strong className="font-medium text-text">4,128</strong> files scanned
+                <strong className="font-medium text-text">
+                  {scanResult?.scannedFiles.toLocaleString() ?? "4,128"}
+                </strong>{" "}
+                files scanned
               </span>
               <span>
-                <strong className="font-medium text-text">14.7s</strong> elapsed
+                <strong className="font-medium text-text">
+                  {scanResult ? `${scanResult.toolResults.length}` : "7"}
+                </strong>{" "}
+                checks
               </span>
             </div>
           </div>
           <div className="relative flex flex-col items-start gap-2 max-lg:items-center">
             <div className="self-start rounded border-[1.5px] border-gold-warm px-2.5 py-1 font-semibold font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.25em] text-gold-warm">
-              Mostly Honest · Score 76
+              {verdictLabel(scanResult?.mergeConfidence)} · Score {overall}
             </div>
             <button
               type="button"
@@ -91,7 +129,7 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
         </div>
 
         <div className="mb-10 grid grid-cols-2 gap-4 lg:grid-cols-5">
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <div
               key={c.key}
               className="relative flex flex-col gap-3.5 overflow-hidden rounded-[10px] border border-line bg-ink-2 p-5"
@@ -252,6 +290,11 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
                 )}
               </div>
             ))}
+            {filtered.length === 0 && (
+              <div className="px-5 py-8 text-sm text-text-soft">
+                No findings in this category.
+              </div>
+            )}
           </div>
 
           <aside className="flex flex-col gap-5">
@@ -259,22 +302,7 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
               <h4 className="feature-soft m-0 mb-3.5 font-[family-name:var(--font-serif)] text-[15px] font-medium">
                 Audit summary
               </h4>
-              {[
-                {
-                  label: "Branch",
-                  value: <code className="code-pill">canary</code>,
-                },
-                {
-                  label: "Commit",
-                  value: <code className="code-pill">9f4e21a</code>,
-                },
-                { label: "Lines of code", value: "412,887" },
-                { label: "Languages", value: "TS · JS · MDX" },
-                {
-                  label: "Auto-fixable",
-                  value: <span className="text-sage-warm">31 / 52</span>,
-                },
-              ].map((row, i, arr) => (
+              {summaryRows.map((row, i, arr) => (
                 <div
                   key={row.label}
                   className={`flex items-center justify-between py-2 text-[13px] ${
@@ -288,6 +316,38 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
                 </div>
               ))}
             </div>
+
+            {scanResult?.toolResults.length ? (
+              <div className="rounded-[10px] border border-line bg-ink-2 p-5">
+                <h4 className="feature-soft m-0 mb-3.5 font-[family-name:var(--font-serif)] text-[15px] font-medium">
+                  Tool checks
+                </h4>
+                {scanResult.toolResults.map((tool) => (
+                  <div
+                    key={tool.id}
+                    className="border-b border-line-soft py-2.5 last:border-b-0 last:pb-0"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium text-text">{tool.name}</span>
+                      <span
+                        className={`rounded border px-2 py-0.5 font-[family-name:var(--font-mono)] text-[10px] uppercase ${
+                          tool.status === "passed"
+                            ? "border-sage/40 text-sage-warm"
+                            : tool.status === "failed"
+                              ? "border-gold/40 text-gold-warm"
+                              : "border-oxblood/40 text-oxblood-soft"
+                        }`}
+                      >
+                        {tool.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[12px] leading-[1.45] text-text-soft">
+                      <CodeText>{tool.summary}</CodeText>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             <div className="rounded-[10px] border border-line bg-ink-2 p-5">
               <h4 className="feature-soft m-0 mb-3.5 font-[family-name:var(--font-serif)] text-[15px] font-medium">
@@ -334,6 +394,91 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
       </div>
     </main>
   );
+}
+
+function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
+  const category = dashboardCategory(finding);
+  return {
+    id: finding.id,
+    severity: finding.severity,
+    category,
+    title: finding.title,
+    path: finding.files.length ? finding.files.join(" · ") : category,
+    description: finding.summary,
+    impact: finding.severity === "high" ? "high" : finding.severity,
+    effort: "medium",
+  };
+}
+
+function dashboardCategory(finding: ScanResult["findings"][number]) {
+  const text = `${finding.id} ${finding.title} ${finding.category}`.toLowerCase();
+  if (text.includes("duplicate") || text.includes("dupe")) {
+    return "Duplication";
+  }
+  if (text.includes("complexity") || text.includes("health")) {
+    return "Complexity";
+  }
+  if (text.includes("cycle")) {
+    return "Cycles";
+  }
+  if (finding.category === "docs-drift") {
+    return "Docs";
+  }
+  return "Drift";
+}
+
+function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
+  return TABS.filter((tab) => tab !== "All").map((key) => {
+    const issues = findings.filter((finding) => finding.category === key);
+    const highCount = issues.filter(
+      (finding) => finding.severity === "critical" || finding.severity === "high",
+    ).length;
+    const mediumCount = issues.filter((finding) => finding.severity === "medium").length;
+    const score = Math.max(
+      0,
+      100 - highCount * 24 - mediumCount * 12 - issues.length * 4,
+    );
+
+    return {
+      key,
+      icon:
+        key === "Duplication"
+          ? "duplicate"
+          : key === "Cycles"
+            ? "circular"
+            : key === "Complexity"
+              ? "complexity"
+              : key === "Docs"
+                ? "docs"
+                : "drift",
+      score,
+      issues: issues.length,
+      tone: score >= 85 ? "good" : score >= 55 ? "warn" : "bad",
+    };
+  });
+}
+
+function scoreFromConfidence(confidence: ScanResult["mergeConfidence"]) {
+  if (confidence === "safe") {
+    return 92;
+  }
+  if (confidence === "needs-docs-update") {
+    return 74;
+  }
+  return 48;
+}
+
+function verdictLabel(confidence: ScanResult["mergeConfidence"] | undefined) {
+  if (confidence === "safe") {
+    return "Clean";
+  }
+  if (confidence === "needs-docs-update") {
+    return "Needs Docs";
+  }
+  if (confidence === "needs-human-review") {
+    return "Needs Review";
+  }
+  return "Mostly Honest";
 }
 
 function PatrolItem({

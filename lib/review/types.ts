@@ -16,12 +16,53 @@ export type Finding = {
   confidence: number;
 };
 
+export type ToolCheckStatus = "passed" | "failed" | "error" | "skipped";
+
+export type ToolCheckIssue = {
+  id: string;
+  title: string;
+  severity: Finding["severity"];
+  category: Finding["category"];
+  path?: string;
+  line?: number;
+  message: string;
+  evidence: string[];
+  suggestedFix: string;
+};
+
+export type ToolCheckOutput = {
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+};
+
+export type ToolCheckResult = {
+  id: string;
+  name: string;
+  command: string;
+  status: ToolCheckStatus;
+  exitCode: number | null;
+  summary: string;
+  durationMs?: number;
+  issues: ToolCheckIssue[];
+  output?: ToolCheckOutput;
+};
+
+export type SandboxScanMetadata = {
+  repoUrl: string;
+  cloneDepth: number;
+  revision?: string;
+  commit?: string;
+  sandboxId?: string;
+};
+
 export type DeputyReport = {
   mergeConfidence: "safe" | "needs-docs-update" | "needs-human-review";
   summary: string;
   findings: Finding[];
   markdown: string;
   memoryUsed?: RepoMemoryInsight[];
+  toolResults?: ToolCheckResult[];
 };
 
 export type ChangedFile = {
@@ -55,6 +96,7 @@ export type ReviewContext = {
   repoName?: string;
   repo: string;
   rootPath?: string;
+  scannedFiles?: number;
   command: ReviewCommand;
   focus: ReviewFocus;
   changedFiles: ChangedFile[];
@@ -64,13 +106,20 @@ export type ReviewContext = {
   readme: RepoFile | null;
   envExample: RepoFile | null;
   memoryInsights: RepoMemoryInsight[];
+  toolResults: ToolCheckResult[];
+  sandbox?: SandboxScanMetadata;
+  runExternalTools?: boolean;
 };
 
 export type RepoScanInput = {
   focus: ReviewFocus;
   rootPath?: string;
+  repoUrl?: string;
+  revision?: string;
   useAi?: boolean;
   useMemory?: boolean;
+  useSandbox?: boolean;
+  runExternalTools?: boolean;
 };
 
 export type RepoScanResult = {

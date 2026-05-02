@@ -19,9 +19,21 @@ comment or event.
 1. The user or tool calls `/api/scan?focus=full`.
 2. The route parses the focus value.
 3. The route runs `runRepoScan({ focus, useAi, useMemory })`.
-4. The response returns scan metadata, findings, markdown, and memory insights.
+4. The response returns scan metadata, findings, markdown, memory insights, and
+   any external `toolResults`.
 
 `memory=true` is required before the GET endpoint writes repo memory.
+
+For remote repository scans, pass `repo=owner/repo` or a public git URL:
+
+```txt
+/api/scan?repo=vercel/next.js&focus=full&ai=false
+```
+
+That path creates a Vercel Sandbox with a depth-1 git source checkout, runs
+Fallow, markdownlint, and markdown-link-check, then returns the parsed tool
+results and lifted Repo Deputy findings. Local scans do not require Vercel
+Sandbox credentials.
 
 ## MCP Flow
 
@@ -33,6 +45,11 @@ comment or event.
    Vercel AI Gateway.
 6. If `useMemory` is true and Mubit is configured, repo memory can be read and
    updated with sanitized lessons.
+
+Passing `repoUrl` to `repo_deputy_scan_repo` switches the MCP tool to the
+sandbox scan path. Sandbox scans always use a depth-1 git checkout and run the
+external toolchain. Passing `runExternalTools: true` with `rootPath` runs the
+local Fallow adapter for local checkouts.
 
 ## Why This Shape
 

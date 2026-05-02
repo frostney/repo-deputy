@@ -1,7 +1,12 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { getGatewayModel } from "@/lib/ai/gateway";
-import type { DeputyReport, Finding, ReviewFocus } from "@/lib/review/types";
+import type {
+  DeputyReport,
+  Finding,
+  ReviewFocus,
+  ToolCheckResult,
+} from "@/lib/review/types";
 import type { RepoMemoryInsight } from "@/lib/memory/types";
 import { reportToMarkdown } from "@/lib/review/report-markdown";
 
@@ -53,9 +58,15 @@ export async function generateDeputyReport(input: {
   focus: ReviewFocus;
   findings: Finding[];
   memoryInsights: RepoMemoryInsight[];
+  toolResults?: ToolCheckResult[];
 }): Promise<DeputyReport> {
   if (!process.env.AI_GATEWAY_API_KEY) {
-    return buildFallbackReport(input.findings, input.memoryInsights, input.focus);
+    return buildFallbackReport(
+      input.findings,
+      input.memoryInsights,
+      input.focus,
+      input.toolResults,
+    );
   }
 
   try {
@@ -76,6 +87,7 @@ export async function generateDeputyReport(input: {
       findings: findings.length ? findings : input.findings,
       markdown: result.object.markdown,
       memoryUsed: input.memoryInsights,
+      toolResults: input.toolResults,
     };
 
     return {
@@ -84,7 +96,12 @@ export async function generateDeputyReport(input: {
     };
   } catch (error) {
     console.warn("AI Gateway report generation failed; using fallback report.", error);
-    return buildFallbackReport(input.findings, input.memoryInsights, input.focus);
+    return buildFallbackReport(
+      input.findings,
+      input.memoryInsights,
+      input.focus,
+      input.toolResults,
+    );
   }
 }
 
@@ -92,6 +109,7 @@ export function buildFallbackReport(
   findings: Finding[],
   memoryInsights: RepoMemoryInsight[],
   focus: ReviewFocus,
+  toolResults: ToolCheckResult[] = [],
 ): DeputyReport {
   const mergeConfidence = confidenceFromFindings(findings);
   const summary =
@@ -107,6 +125,7 @@ export function buildFallbackReport(
     findings: sortFindings(findings),
     markdown: "",
     memoryUsed: memoryInsights,
+    toolResults,
   };
 
   return {
@@ -120,6 +139,7 @@ function buildPrompt(input: {
   focus: ReviewFocus;
   findings: Finding[];
   memoryInsights: RepoMemoryInsight[];
+  toolResults?: ToolCheckResult[];
 }) {
   return `${REPORT_PROMPT}
 
@@ -131,7 +151,10 @@ Deterministic findings:
 ${JSON.stringify(input.findings, null, 2)}
 
 Relevant repo memory:
-${JSON.stringify(input.memoryInsights, null, 2)}`;
+${JSON.stringify(input.memoryInsights, null, 2)}
+
+External tool results:
+${JSON.stringify(input.toolResults ?? [], null, 2)}`;
 }
 
 function confidenceFromFindings(findings: Finding[]): DeputyReport["mergeConfidence"] {

@@ -145,6 +145,7 @@ function createContext(
     readme: null,
     envExample: null,
     memoryInsights: [],
+    toolResults: [],
     ...overrides,
   };
 }

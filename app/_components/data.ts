@@ -13,6 +13,44 @@ export type Finding = {
   effort: string;
 };
 
+export type ApiFinding = {
+  id: string;
+  severity: "high" | "medium" | "low";
+  category: string;
+  title: string;
+  summary: string;
+  evidence: string[];
+  files: string[];
+  suggestedFix: string;
+};
+
+export type ApiToolResult = {
+  id: string;
+  name: string;
+  command: string;
+  status: "passed" | "failed" | "error" | "skipped";
+  exitCode: number | null;
+  summary: string;
+  issues: Array<{
+    id: string;
+    title: string;
+    path?: string;
+    line?: number;
+    message: string;
+  }>;
+};
+
+export type ScanResult = {
+  repo: string;
+  repoUrl?: string;
+  scannedFiles: number;
+  mergeConfidence: "safe" | "needs-docs-update" | "needs-human-review";
+  summary: string;
+  findings: ApiFinding[];
+  markdown: string;
+  toolResults: ApiToolResult[];
+};
+
 export const FINDINGS: Finding[] = [
   {
     id: "f1",
@@ -194,75 +232,48 @@ export type ScanCheck = {
 
 export const SCAN_CHECKS: ScanCheck[] = [
   {
-    id: "clone",
-    name: "Cloning repository",
-    meta: "git fetch --depth=1",
+    id: "sandbox",
+    name: "Starting sandbox",
+    meta: "Vercel Sandbox · git source depth=1",
     duration: 1200,
   },
   {
-    id: "index",
-    name: "Indexing source files",
-    meta: "tree-sitter parse · 4,128 files",
-    duration: 1600,
+    id: "checkout",
+    name: "Checking out repository",
+    meta: "git clone --depth=1",
+    duration: 1400,
   },
   {
-    id: "dup",
-    name: "Detecting duplication",
-    meta: "AST fingerprints · 318 modules",
-    duration: 1900,
+    id: "bun",
+    name: "Preparing toolchain",
+    meta: "Bun runtime for analyzer CLIs",
+    duration: 1200,
   },
   {
-    id: "drift",
-    name: "Checking architectural drift",
-    meta: "boundary rules · 12 layers",
+    id: "fallow",
+    name: "Running Fallow",
+    meta: "dead code · duplication · complexity",
     duration: 1800,
   },
   {
-    id: "cycles",
-    name: "Hunting circular dependencies",
-    meta: "tarjan SCC · graph depth 14",
-    duration: 1500,
+    id: "markdownlint",
+    name: "Linting Markdown",
+    meta: "markdownlint-cli2",
+    duration: 1400,
   },
   {
-    id: "complex",
-    name: "Measuring complexity",
-    meta: "cyclomatic + cognitive · 2,914 fns",
-    duration: 1700,
+    id: "markdown-link-check",
+    name: "Checking Markdown links",
+    meta: "markdown-link-check",
+    duration: 1400,
   },
   {
-    id: "docs",
-    name: "Comparing docs to code",
-    meta: "README · CHANGELOG · 187 docstrings",
-    duration: 1900,
+    id: "report",
+    name: "Preparing report",
+    meta: "Repo Deputy findings and markdown",
+    duration: 900,
   },
 ];
 
 export type LogTag = "ok" | "info" | "warn" | "err";
 export type LogLine = { t: LogTag; text: string };
-
-export const LOG_LINES: LogLine[] = [
-  { t: "ok", text: "→ Cloned vercel/next.js @ canary-9f4e21" },
-  { t: "info", text: "  Indexed 4,128 files (TypeScript, JavaScript, MDX)" },
-  { t: "info", text: "  AST fingerprint cache · cold start" },
-  {
-    t: "warn",
-    text: "  Found 14 likely-duplicate blocks across `packages/next/src/server/router`",
-  },
-  {
-    t: "info",
-    text: "  Boundary check: `app` may not import from `pages-internal`",
-  },
-  { t: "err", text: "  Drift: 3 violations of layered architecture detected" },
-  {
-    t: "info",
-    text: "  Tarjan strongly-connected components computed in 142ms",
-  },
-  { t: "warn", text: "  Cycle: `utils/log` → `telemetry/index` → `utils/log`" },
-  { t: "info", text: "  Cyclomatic median 4 · 95th-pct 23" },
-  {
-    t: "warn",
-    text: "  README references deprecated `next export` API in 4 places",
-  },
-  { t: "ok", text: "  Comparing API surface against `docs.nextjs.org` snapshot" },
-  { t: "ok", text: "✓ Audit complete · grading…" },
-];

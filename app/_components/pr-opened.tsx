@@ -1,17 +1,11 @@
 "use client";
 
 import { Icon, Sym } from "./icons";
-
-type PR = {
-  count: number;
-  files: number;
-  branch: string;
-  title: string;
-};
+import type { PullRequestDraft } from "./pr-data";
 
 type Props = {
   repo: string;
-  pr: PR;
+  pr: PullRequestDraft;
   onBack: () => void;
   onView: () => void;
 };
@@ -32,14 +26,15 @@ export function PROpened({ repo, pr, onBack, onView }: Props) {
               </div>
             </div>
             <div className="mb-3 font-[family-name:var(--font-mono)] text-[11px] uppercase tracking-[0.25em] text-gold">
-              ★ ★ ★ Pull Request Filed ★ ★ ★
+              ★ ★ ★ PR Request Ready ★ ★ ★
             </div>
             <h1 className="headline-fraunces m-0 mb-3 text-[38px] font-normal font-[family-name:var(--font-display)]">
-              The <em className="italic text-gold">posse</em> is on it.
+              The <em className="italic text-gold">request</em> is ready.
             </h1>
             <p className="mx-auto mb-7 max-w-[480px] text-pretty text-base leading-[1.55] text-text-soft">
-              Repo Deputy filed a pull request with {pr.count} fixes across {pr.files}{" "}
-              files. CI is running. Reviewers have been pinged.
+              Repo Deputy prepared a draft from {pr.count} current scan findings across{" "}
+              {pr.files} referenced files. No remote pull request was filed from this
+              local flow.
             </p>
 
             <div className="mx-auto mb-7 flex max-w-[520px] items-center gap-3.5 rounded-[10px] border border-line bg-ink-3 px-5 py-4 text-left">
@@ -49,13 +44,22 @@ export function PROpened({ repo, pr, onBack, onView }: Props) {
               <div className="flex-1">
                 <div className="text-sm font-medium text-text">{pr.title}</div>
                 <div className="mt-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-mute">
-                  {repo} · #58247 · <code className="code-pill">{pr.branch}</code> →{" "}
-                  <code className="code-pill">canary</code> · CI running
+                  {repo} · <code className="code-pill">{pr.branch}</code> ·{" "}
+                  {pr.highestSeverity ?? "no"} severity · {pr.evidence} evidence items
                 </div>
+                {pr.findingIds.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {pr.findingIds.slice(0, 4).map((id) => (
+                      <code key={id} className="code-pill">
+                        {id}
+                      </code>
+                    ))}
+                    {pr.findingIds.length > 4 && (
+                      <code className="code-pill">+{pr.findingIds.length - 4}</code>
+                    )}
+                  </div>
+                )}
               </div>
-              <button type="button" className="btn btn-quiet btn-sm">
-                <Icon name="external" size={12} /> View
-              </button>
             </div>
 
             <div className="flex justify-center gap-3">

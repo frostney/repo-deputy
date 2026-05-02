@@ -9,6 +9,7 @@ import {
   type ScanResult,
 } from "./data";
 import { CodeText, Icon } from "./icons";
+import { dashboardCategoryForFinding } from "./pr-data";
 import { ScoreRing } from "./score-ring";
 
 type Props = {
@@ -28,12 +29,13 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
   const findings = scanResult ? (liveFindings ?? []) : FINDINGS;
   const categories = scanResult ? categoriesFromFindings(findings) : CATEGORIES;
   const overall = scanResult ? scoreFromConfidence(scanResult.mergeConfidence) : 76;
+  const source = sourceLabel(scanResult);
   const criticalCount = findings.filter(
     (finding) => finding.severity === "critical" || finding.severity === "high",
   ).length;
   const summaryRows = scanResult
     ? [
-        { label: "Source", value: scanResult.repoUrl ? "Sandbox" : "Local" },
+        { label: "Source", value: source },
         { label: "Files scanned", value: scanResult.scannedFiles.toLocaleString() },
         { label: "Findings", value: String(scanResult.findings.length) },
         {
@@ -90,6 +92,9 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
               </span>
             </h2>
             <div className="mt-1 flex flex-wrap gap-5 font-[family-name:var(--font-mono)] text-xs text-text-mute max-lg:justify-center">
+              <span>
+                Source: <strong className="font-medium text-text">{source}</strong>
+              </span>
               <span>
                 <strong className="font-medium text-text">{findings.length}</strong>{" "}
                 findings
@@ -222,9 +227,10 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                   </span>
                   <button
                     type="button"
-                    aria-label="Toggle details"
+                    aria-expanded={expanded === f.id}
+                    aria-label={`${expanded === f.id ? "Hide" : "Show"} details for ${f.title}`}
                     onClick={() => setExpanded(expanded === f.id ? null : f.id)}
-                    className={`hidden cursor-pointer border-0 bg-transparent text-text-mute transition-transform ${
+                    className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border border-line bg-ink-2 text-text-mute transition hover:bg-ink-4 hover:text-text ${
                       expanded === f.id ? "rotate-90" : ""
                     }`}
                   >
@@ -232,10 +238,42 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                   </button>
                 </div>
                 {expanded === f.id && (
-                  <div className="hidden gap-4 px-5 pb-5">
-                    <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
-                      <CodeText>{f.description}</CodeText>
-                    </p>
+                  <div className="grid gap-4 px-5 pb-5">
+                    <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                      <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                        Summary
+                      </div>
+                      <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
+                        <CodeText>{f.description}</CodeText>
+                      </p>
+                    </div>
+                    {f.evidence?.length ? (
+                      <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                        <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                          Evidence
+                        </div>
+                        <ul className="m-0 grid list-none gap-1.5 p-0 text-[12px] leading-[1.55] text-text-soft">
+                          {f.evidence.map((item) => (
+                            <li key={item} className="flex gap-2">
+                              <span className="text-gold-warm">-</span>
+                              <span>
+                                <CodeText>{item}</CodeText>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {f.suggestedFix ? (
+                      <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                        <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                          Suggested fix
+                        </div>
+                        <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
+                          <CodeText>{f.suggestedFix}</CodeText>
+                        </p>
+                      </div>
+                    ) : null}
                     {f.id === "f1" && (
                       <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
                         <div className="flex justify-between border-b border-line bg-ink-3 px-3.5 py-2 text-[11px] text-text-mute">
@@ -318,19 +356,21 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
             </div>
 
             {scanResult?.toolResults.length ? (
-              <div className="rounded-[10px] border border-line bg-ink-2 p-5">
-                <h4 className="feature-soft m-0 mb-3.5 font-[family-name:var(--font-serif)] text-[15px] font-medium">
+              <div className="rounded-[10px] border border-line bg-ink-2 p-3.5">
+                <h4 className="feature-soft m-0 mb-2.5 font-[family-name:var(--font-serif)] text-[13px] font-medium">
                   Tool checks
                 </h4>
                 {scanResult.toolResults.map((tool) => (
                   <div
                     key={tool.id}
-                    className="border-b border-line-soft py-2.5 last:border-b-0 last:pb-0"
+                    className="border-b border-line-soft py-1.5 last:border-b-0 last:pb-0"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-medium text-text">{tool.name}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-text">
+                        {tool.name}
+                      </span>
                       <span
-                        className={`rounded border px-2 py-0.5 font-[family-name:var(--font-mono)] text-[10px] uppercase ${
+                        className={`rounded border px-1.5 py-px font-[family-name:var(--font-mono)] text-[9px] uppercase ${
                           tool.status === "passed"
                             ? "border-sage/40 text-sage-warm"
                             : tool.status === "failed"
@@ -341,7 +381,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                         {tool.status}
                       </span>
                     </div>
-                    <div className="mt-1 text-[12px] leading-[1.45] text-text-soft">
+                    <div className="mt-0.5 line-clamp-2 text-[10px] leading-[1.4] text-text-soft">
                       <CodeText>{tool.summary}</CodeText>
                     </div>
                   </div>
@@ -369,7 +409,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
 }
 
 function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
-  const category = dashboardCategory(finding);
+  const category = dashboardCategoryForFinding(finding);
   return {
     id: finding.id,
     severity: finding.severity,
@@ -377,28 +417,30 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
     title: finding.title,
     path: finding.files.length ? finding.files.join(" · ") : category,
     description: finding.summary,
+    evidence: finding.evidence,
+    files: finding.files,
+    suggestedFix: finding.suggestedFix,
     impact: finding.severity === "high" ? "high" : finding.severity,
     effort: "medium",
   };
 }
 
-function dashboardCategory(finding: ScanResult["findings"][number]) {
-  const text = `${finding.id} ${finding.title} ${finding.category}`.toLowerCase();
-  if (text.includes("duplicate") || text.includes("dupe")) {
-    return "Duplication";
+function sourceLabel(scanResult: ScanResult | null) {
+  if (!scanResult) {
+    return "Sandbox";
   }
-  if (text.includes("complexity") || text.includes("health")) {
-    return "Complexity";
-  }
-  if (text.includes("cycle")) {
-    return "Cycles";
-  }
-  if (finding.category === "docs-drift") {
-    return "Docs";
-  }
-  return "Drift";
-}
 
+  if (
+    scanResult.repoUrl ||
+    scanResult.toolResults.some(
+      (tool) => tool.id === "sandbox" || tool.id === "git-clone",
+    )
+  ) {
+    return "Sandbox";
+  }
+
+  return "Local";
+}
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   return TABS.filter((tab) => tab !== "All").map((key) => {
     const issues = findings.filter((finding) => finding.category === key);

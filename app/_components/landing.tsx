@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import type { ScanStats } from "./data";
 import { Icon, type IconName, Sym } from "./icons";
 
 type Props = {
@@ -63,6 +64,29 @@ export function Landing({ onAudit }: Props) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [isChecking, setIsChecking] = useState(false);
+  const [stats, setStats] = useState<ScanStats | null>(null);
+  const visibleStats = stats?.available ? stats : null;
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadStats() {
+      try {
+        const response = await fetch("/api/stats", { signal: controller.signal });
+        if (!response.ok) {
+          return;
+        }
+        setStats((await response.json()) as ScanStats);
+      } catch {
+        if (!controller.signal.aborted) {
+          setStats(null);
+        }
+      }
+    }
+
+    loadStats();
+    return () => controller.abort();
+  }, []);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -205,7 +229,7 @@ export function Landing({ onAudit }: Props) {
           </div>
         </form>
 
-        <div className="mx-auto mt-16 flex max-w-[760px] -rotate-[0.4deg] items-center gap-5 rounded-md bg-paper py-[18px] px-7 font-[family-name:var(--font-serif)] text-ink shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)] relative">
+        <div className="relative mx-auto mt-16 flex max-w-[760px] -rotate-[0.4deg] flex-col gap-5 rounded-md bg-paper px-7 py-[18px] font-[family-name:var(--font-serif)] text-ink shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6)] sm:flex-row sm:items-center">
           <span
             aria-hidden
             className="absolute -top-1.5 left-[30px] h-[30px] w-[30px] -rotate-[8deg] rounded bg-black/15"
@@ -225,15 +249,37 @@ export function Landing({ onAudit }: Props) {
               Last seen: in your last AI-assisted PR · Reward: a clean diff
             </div>
           </div>
-          <div className="flex-1" />
-          <div className="hidden text-right">
-            <div className="text-[32px] font-semibold leading-none text-oxblood">
-              12,847
-            </div>
-            <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.2em] text-black/50">
-              Repos patrolled
-            </div>
-          </div>
+          {visibleStats ? (
+            <>
+              <div className="flex-1" />
+              <div className="grid w-full grid-cols-3 gap-4 border-t border-black/15 pt-4 text-left sm:w-auto sm:min-w-[250px] sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5">
+                <div>
+                  <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
+                    {formatCounter(visibleStats.totalRuns)}
+                  </div>
+                  <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
+                    Runs
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
+                    {formatCounter(visibleStats.repositoryCount)}
+                  </div>
+                  <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
+                    Repos
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[26px] font-semibold leading-none text-oxblood tabular-nums">
+                    {formatCounter(visibleStats.totalFilesScanned)}
+                  </div>
+                  <div className="mt-1 font-[family-name:var(--font-mono)] text-[9px] uppercase tracking-[0.16em] text-black/50">
+                    Code files
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
         </div>
 
         <div className="mt-[72px] flex items-center justify-center gap-3 font-[family-name:var(--font-mono)] text-xs tracking-[0.3em] text-text-mute">
@@ -306,4 +352,11 @@ function normalizeRepoInput(value: string, mode: "submit" | "typing" = "submit")
   return mode === "typing"
     ? withoutGithubPrefix
     : withoutGithubPrefix.replace(/\/$/u, "");
+}
+
+function formatCounter(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: value >= 100_000 ? "compact" : "standard",
+    maximumFractionDigits: 1,
+  }).format(value);
 }

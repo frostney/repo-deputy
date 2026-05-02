@@ -217,9 +217,17 @@ body::before {
 
 .spin-slow {
   animation: spin-slow 24s linear infinite;
+  transform-origin: center;
 }
 @keyframes spin-slow {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin-slow,
+  .scan-spinner-mono::before {
+    animation: none;
   }
 }

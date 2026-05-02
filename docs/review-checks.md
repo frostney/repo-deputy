@@ -85,8 +85,9 @@ Remote repository scans create an ephemeral Vercel Sandbox from a git source
 with `depth: 1`, install Bun in the sandbox if needed, then run:
 
 - Fallow for code graph, duplication, and health analysis.
-- Lightweight Python/Ruby/Object Pascal/Java analysis for heuristic complexity
-  and duplicate-block findings.
+- One lightweight language analyzer per detected Python, Ruby, Object Pascal, or
+  Java source set. Repositories without Java files, for example, do not run the
+  Java analyzer.
 - `markdownlint-cli2` for Markdown style and structure diagnostics.
 - `markdown-link-check` for broken Markdown links.
 
@@ -97,7 +98,8 @@ reports, API responses, and MCP responses.
 
 The app API runs these as separate phases against one sandbox session:
 
-- Session phase: create sandbox, clone, setup Bun, collect metadata.
+- Session phase: create sandbox, clone, setup Bun, collect metadata, and detect
+  which lightweight language analyzers are needed.
 - Tool phase: run a single analyzer by id.
 - Report phase: generate the report from accumulated `toolResults` and stop the
   sandbox.

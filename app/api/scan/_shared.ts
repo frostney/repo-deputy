@@ -8,6 +8,7 @@ import type {
 } from "@/lib/review/types";
 import type { SandboxScanSession, SandboxScanToolId } from "@/lib/scan/sandbox";
 import { SANDBOX_SCAN_TOOL_IDS } from "@/lib/scan/sandbox";
+import type { SourceLanguage } from "@/lib/review/light-language";
 
 export type ScanRequestInput = {
   focus: ReviewFocus;
@@ -46,13 +47,12 @@ export function parseSandboxSession(value: unknown): SandboxScanSession {
   const body = asRecord(value);
   const session = asRecord(body.session ?? body);
   const repo = textField(session.repo);
-  const repoUrl = textField(session.repoUrl);
+  const sandbox = parseSandboxMetadata(session.sandbox, textField(session.repoUrl));
 
-  if (!repo || !repoUrl) {
+  if (!repo || !sandbox?.repoUrl) {
     throw new Error("Missing split scan session.");
   }
 
-  const sandbox = parseSandboxMetadata(session.sandbox, repoUrl);
   const scannedFiles =
     typeof session.scannedFiles === "number" && Number.isFinite(session.scannedFiles)
       ? session.scannedFiles
@@ -61,12 +61,21 @@ export function parseSandboxSession(value: unknown): SandboxScanSession {
   return {
     repo,
     repoName: textField(session.repoName),
-    repoUrl,
     focus: parseFocus(textField(session.focus)),
     revision: textField(session.revision),
     scannedFiles,
+    languageFiles: parseLanguageFiles(session.languageFiles),
     sandbox,
   };
+}
+
+export function parseSandboxId(value: unknown): string | undefined {
+  const body = asRecord(value);
+  return (
+    textField(body.sandboxId) ??
+    textField(asRecord(body.sandbox).sandboxId) ??
+    textField(asRecord(asRecord(body.session).sandbox).sandboxId)
+  );
 }
 
 export function parseSandboxScanToolId(value: unknown): SandboxScanToolId {
@@ -123,7 +132,7 @@ export function scanErrorMessage(error: unknown) {
 
 function parseSandboxMetadata(
   value: unknown,
-  repoUrl: string,
+  repoUrl?: string,
 ): SandboxScanMetadata | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -131,6 +140,9 @@ function parseSandboxMetadata(
 
   const metadata = value as Record<string, unknown>;
   const parsedRepoUrl = textField(metadata.repoUrl) ?? repoUrl;
+  if (!parsedRepoUrl) {
+    return undefined;
+  }
   const cloneDepth =
     typeof metadata.cloneDepth === "number" && Number.isFinite(metadata.cloneDepth)
       ? metadata.cloneDepth
@@ -143,6 +155,20 @@ function parseSandboxMetadata(
     commit: textField(metadata.commit),
     sandboxId: textField(metadata.sandboxId),
   };
+}
+
+function parseLanguageFiles(value: unknown): Partial<Record<SourceLanguage, number>> {
+  const input = asRecord(value);
+  const languageFiles: Partial<Record<SourceLanguage, number>> = {};
+
+  for (const language of ["python", "ruby", "pascal", "java"] as const) {
+    const count = input[language];
+    if (typeof count === "number" && Number.isFinite(count) && count > 0) {
+      languageFiles[language] = count;
+    }
+  }
+
+  return languageFiles;
 }
 
 function isToolCheckResult(value: unknown): value is ToolCheckResult {

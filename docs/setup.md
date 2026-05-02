@@ -64,13 +64,14 @@ curl -X POST http://localhost:3000/api/scan/session \
   -d '{"repo":"vercel/next.js","focus":"full","ai":false}'
 ```
 
-Then call `/api/scan/tool` for `fallow`, `light-language-analysis`,
-`markdownlint`, and `markdown-link-check` with the returned session. Tool calls
-can run in parallel because they attach to the same sandbox id. Finish with
-`/api/scan/report`. Supported focus values are `docs`, `code`, and `full`. Use
-`ai=false` for deterministic fallback reporting. The `repo` field is required
-because app/API scans use Vercel Sandbox rather than reading local filesystem
-paths.
+Then call `/api/scan/tool` for each returned tool id using the returned
+`sandboxId`. Tool calls can run in parallel because they attach to the same
+sandbox. Lightweight language tool ids are language-specific, such as
+`light-language-python` or `light-language-java`, and are returned only when
+matching files exist. Finish with `/api/scan/report`. Supported focus values are
+`docs`, `code`, and `full`. Use `ai=false` for deterministic fallback reporting.
+The `repo` field is required because app/API scans use Vercel Sandbox rather
+than reading local filesystem paths.
 
 The sandbox scan runs Fallow, lightweight Python/Ruby/Object Pascal/Java analysis,
 markdownlint, and markdown-link-check, then returns parsed `toolResults`

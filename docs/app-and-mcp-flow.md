@@ -10,9 +10,10 @@ local filesystem checkouts from the app, API, or MCP server.
 3. `app/_components/scanning.tsx` calls `/api/scan/session`.
 4. The session route creates one Vercel Sandbox, performs the depth-1 checkout,
    prepares Bun, and returns a session containing the sandbox id.
-5. The app calls `/api/scan/tool` in parallel for each analyzer while passing
-   the same session, so Fallow, lightweight language analysis, markdownlint, and
-   markdown-link-check run as separate API phases against one sandbox.
+5. The app calls `/api/scan/tool` in parallel for each planned analyzer while
+   passing the same sandbox id, so Fallow, detected language-specific lightweight
+   analyzers, markdownlint, and markdown-link-check run as separate API phases
+   against one sandbox.
 6. The app calls `/api/scan/report` with the accumulated `toolResults`.
 7. The report route lifts tool issues into findings, stops the sandbox, and
    returns the final scan payload.
@@ -26,13 +27,15 @@ The app uses the split API so scan phases can be tracked and retried without
 creating extra sandboxes.
 
 1. `POST /api/scan/session` with `{ "repo": "owner/repo", "focus": "full" }`.
-2. If `ready` is true, call `POST /api/scan/tool` with `{ "session": ..., "tool": "fallow" }`.
-3. Repeat the tool request for `light-language-analysis`, `markdownlint`, and
-   `markdown-link-check`. These calls are independent after checkout and can be
-   run in parallel by clients that want that behavior.
-4. `POST /api/scan/report` with `{ "session": ..., "toolResults": [...] }`.
-5. If a client abandons a scan before reporting, `POST /api/scan/stop` accepts
-   the same session and releases the sandbox best-effort.
+2. The response includes `tools`, for example `fallow`, `light-language-python`,
+   `markdownlint`, and `markdown-link-check`. Language tools are included only
+   for languages found in the checked-out repository.
+3. If `ready` is true, call `POST /api/scan/tool` with `{ "sandboxId": "...", "tool": "fallow" }`.
+4. Repeat the tool request for every returned tool id. These calls are
+   independent after checkout and can run in parallel.
+5. `POST /api/scan/report` with `{ "session": ..., "toolResults": [...] }`.
+6. If a client abandons a scan before reporting, `POST /api/scan/stop` accepts
+   `{ "sandboxId": "..." }` and releases the sandbox best-effort.
 
 Example:
 

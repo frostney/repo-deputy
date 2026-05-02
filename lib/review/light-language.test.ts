@@ -163,6 +163,29 @@ describe("analyzeLightLanguageFiles", () => {
     expect(result.summary).toContain("Java");
   });
 
+  test("builds a language-specific tool result without running absent languages", () => {
+    const result = buildLightLanguageToolResult({
+      files: [
+        { path: "src/a.py", content: pythonDuplicateFixture("alpha") },
+        { path: "src/b.py", content: pythonDuplicateFixture("beta") },
+        { path: "src/A.java", content: javaDuplicateFixture("alpha") },
+        { path: "src/B.java", content: javaDuplicateFixture("beta") },
+      ],
+      language: "python",
+    });
+
+    expect(result.id).toBe("light-language-python");
+    expect(result.name).toBe("Python analysis");
+    expect(result.summary).toContain("Python");
+    expect(result.summary).not.toContain("Java");
+    expect(result.issues.map((issue) => issue.id)).toContain(
+      "light-language-python-duplication",
+    );
+    expect(result.issues.map((issue) => issue.id)).not.toContain(
+      "light-language-java-duplication",
+    );
+  });
+
   test("runs duplicate analysis separately per detected language", () => {
     const issues = analyzeLightLanguageFiles([
       { path: "src/a.py", content: pythonDuplicateFixture("alpha") },

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  parseSandboxId,
   parseSandboxScanToolId,
   parseSandboxSession,
   parseScanRequestInput,
@@ -28,9 +29,9 @@ describe("split scan API helpers", () => {
         session: {
           repo: "vercel/next.js",
           repoName: "next.js",
-          repoUrl: "https://github.com/vercel/next.js.git",
           focus: "full",
           scannedFiles: 123,
+          languageFiles: { python: 2 },
           sandbox: {
             repoUrl: "https://github.com/vercel/next.js.git",
             cloneDepth: 1,
@@ -41,10 +42,10 @@ describe("split scan API helpers", () => {
     ).toEqual({
       repo: "vercel/next.js",
       repoName: "next.js",
-      repoUrl: "https://github.com/vercel/next.js.git",
       focus: "full",
       revision: undefined,
       scannedFiles: 123,
+      languageFiles: { python: 2 },
       sandbox: {
         repoUrl: "https://github.com/vercel/next.js.git",
         cloneDepth: 1,
@@ -57,7 +58,13 @@ describe("split scan API helpers", () => {
 
   test("accepts only known sandbox tool ids", () => {
     expect(parseSandboxScanToolId("fallow")).toBe("fallow");
+    expect(parseSandboxScanToolId("light-language-python")).toBe("light-language-python");
     expect(() => parseSandboxScanToolId("unknown")).toThrow("Unsupported scan tool");
+  });
+
+  test("parses sandbox ids without requiring duplicated repo metadata", () => {
+    expect(parseSandboxId({ sandboxId: "sbx_direct" })).toBe("sbx_direct");
+    expect(parseSandboxId({ sandbox: { sandboxId: "sbx_nested" } })).toBe("sbx_nested");
   });
 
   test("keeps valid tool results and drops malformed entries", () => {

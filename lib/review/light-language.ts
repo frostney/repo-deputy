@@ -22,7 +22,7 @@ const HIGH_BRANCH_COUNT = 20;
 const HIGH_STRUCTURAL_SCORE = 32;
 const HIGH_LINE_COUNT = 180;
 
-type SourceLanguage = "python" | "ruby" | "pascal" | "java";
+export type SourceLanguage = "python" | "ruby" | "pascal" | "java";
 
 type SourceFile = {
   path: string;
@@ -66,7 +66,13 @@ type DuplicateGroup = {
 };
 
 const RUBY_BASENAMES = new Set(["capfile", "gemfile", "guardfile", "rakefile"]);
-const LANGUAGE_ORDER: SourceLanguage[] = ["python", "ruby", "pascal", "java"];
+export const LIGHT_LANGUAGE_ANALYSIS_LANGUAGES: SourceLanguage[] = [
+  "python",
+  "ruby",
+  "pascal",
+  "java",
+];
+const LANGUAGE_ORDER = LIGHT_LANGUAGE_ANALYSIS_LANGUAGES;
 const LANGUAGE_LABELS: Record<SourceLanguage, string> = {
   java: "Java",
   pascal: "Object Pascal",
@@ -119,11 +125,15 @@ export function buildLightLanguageToolResult(input: {
   files: SourceFile[];
   skipped?: SkippedCounts;
   source?: "sandbox" | "fixture";
+  language?: SourceLanguage;
 }): ToolCheckResult {
   const skipped = normalizeSkippedCounts(input.skipped);
-  const sources = classifySources(input.files);
+  const sources = classifySources(input.files).filter(
+    (source) => !input.language || source.language === input.language,
+  );
   const issues = analyzeSources(sources);
-  const scanLimitIssue = buildScanLimitIssue(skipped);
+  const scanLimitIssue = buildScanLimitIssue(skipped, input.language);
+  const meta = lightLanguageToolMeta(input.language);
 
   if (scanLimitIssue) {
     issues.push(scanLimitIssue);
@@ -132,14 +142,18 @@ export function buildLightLanguageToolResult(input: {
   const status = issues.length > 0 ? "failed" : sources.length > 0 ? "passed" : "skipped";
 
   return {
-    id: LIGHT_LANGUAGE_TOOL_ID,
-    name: "Lightweight language analysis",
-    command: LIGHT_LANGUAGE_COMMAND,
+    id: meta.id,
+    name: meta.name,
+    command: meta.command,
     status,
     exitCode: 0,
     summary: summarizeResult(sources, issues, skipped),
     issues,
   };
+}
+
+export function lightLanguageToolId(language: SourceLanguage) {
+  return `light-language-${language}` as const;
 }
 
 export function analyzeLightLanguageFiles(files: SourceFile[]): ToolCheckIssue[] {
@@ -245,19 +259,26 @@ function buildDuplicationIssue(
   };
 }
 
-function buildScanLimitIssue(skipped: Required<SkippedCounts>): ToolCheckIssue | null {
+function buildScanLimitIssue(
+  skipped: Required<SkippedCounts>,
+  language?: SourceLanguage,
+): ToolCheckIssue | null {
   const materialSkipped = skipped.tooLarge + skipped.totalLimit + skipped.unreadable;
   if (materialSkipped <= 0) {
     return null;
   }
 
+  const languageLabel = language ? LANGUAGE_LABELS[language] : null;
   return {
-    id: "light-language-scan-limit",
-    title: "Lightweight language analysis skipped some source files",
+    id: language ? `light-language-${language}-scan-limit` : "light-language-scan-limit",
+    title: languageLabel
+      ? `Lightweight ${languageLabel} analysis skipped some source files`
+      : "Lightweight language analysis skipped some source files",
     severity: skipped.totalLimit > 0 ? "medium" : "low",
     category: "code-drift",
-    message:
-      "Lightweight language analysis did not inspect every matching Python, Ruby, Object Pascal, or Java file because collection limits were reached.",
+    message: languageLabel
+      ? `Lightweight language analysis did not inspect every matching ${languageLabel} file because collection limits were reached.`
+      : "Lightweight language analysis did not inspect every matching Python, Ruby, Object Pascal, or Java file because collection limits were reached.",
     evidence: [
       `Files too large: ${skipped.tooLarge}`,
       `Files skipped by total-size limit: ${skipped.totalLimit}`,
@@ -265,6 +286,22 @@ function buildScanLimitIssue(skipped: Required<SkippedCounts>): ToolCheckIssue |
     ],
     suggestedFix:
       "Reduce the target source size, then rerun the sandbox scan or inspect the skipped large source files manually.",
+  };
+}
+
+function lightLanguageToolMeta(language?: SourceLanguage) {
+  if (!language) {
+    return {
+      id: LIGHT_LANGUAGE_TOOL_ID,
+      name: "Lightweight language analysis",
+      command: LIGHT_LANGUAGE_COMMAND,
+    };
+  }
+
+  return {
+    id: lightLanguageToolId(language),
+    name: `${LANGUAGE_LABELS[language]} analysis`,
+    command: `${LIGHT_LANGUAGE_COMMAND} --language ${language}`,
   };
 }
 

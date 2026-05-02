@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeRepoLocator, parseSandboxLanguageSourcePayload } from "./sandbox";
+import {
+  normalizeRepoLocator,
+  parseSandboxLanguageManifestPayload,
+  parseSandboxLanguageSourcePayload,
+} from "./sandbox";
 
 describe("normalizeRepoLocator", () => {
   test("normalizes GitHub shorthand to a shallow-cloneable git URL", () => {
@@ -21,28 +25,31 @@ describe("normalizeRepoLocator", () => {
 
 describe("parseSandboxLanguageSourcePayload", () => {
   test("parses valid sandbox language source JSON", () => {
-    const result = parseSandboxLanguageSourcePayload({
-      command: "collect language sources",
-      exitCode: 0,
-      stdout: JSON.stringify({
-        files: [
-          {
-            path: "src/a.py",
-            content: duplicatePythonBlock("alpha"),
-            size: 512,
-          },
-          {
-            path: "src/b.py",
-            content: duplicatePythonBlock("beta"),
-            size: 512,
-          },
-        ],
-        skipped: { tooLarge: 0, unsupported: 0, totalLimit: 0, unreadable: 0 },
-      }),
-      stderr: "",
-    });
+    const result = parseSandboxLanguageSourcePayload(
+      {
+        command: "collect language sources",
+        exitCode: 0,
+        stdout: JSON.stringify({
+          files: [
+            {
+              path: "src/a.py",
+              content: duplicatePythonBlock("alpha"),
+              size: 512,
+            },
+            {
+              path: "src/b.py",
+              content: duplicatePythonBlock("beta"),
+              size: 512,
+            },
+          ],
+          skipped: { tooLarge: 0, unsupported: 0, totalLimit: 0, unreadable: 0 },
+        }),
+        stderr: "",
+      },
+      "python",
+    );
 
-    expect(result.id).toBe("light-language-analysis");
+    expect(result.id).toBe("light-language-python");
     expect(result.status).toBe("failed");
     expect(result.issues.map((issue) => issue.id)).toContain(
       "light-language-python-duplication",
@@ -75,6 +82,35 @@ describe("parseSandboxLanguageSourcePayload", () => {
     expect(result.status).toBe("failed");
     expect(result.summary).toContain("skipped 6 files");
     expect(result.issues.map((issue) => issue.id)).toContain("light-language-scan-limit");
+  });
+});
+
+describe("parseSandboxLanguageManifestPayload", () => {
+  test("parses language counts from sandbox manifest JSON", () => {
+    expect(
+      parseSandboxLanguageManifestPayload({
+        command: "collect language manifest",
+        exitCode: 0,
+        stdout: JSON.stringify({
+          languages: [
+            { language: "python", count: 3 },
+            { language: "java", count: 1 },
+          ],
+        }),
+        stderr: "",
+      }),
+    ).toEqual({ java: 1, python: 3 });
+  });
+
+  test("returns null for invalid language manifest JSON", () => {
+    expect(
+      parseSandboxLanguageManifestPayload({
+        command: "collect language manifest",
+        exitCode: 0,
+        stdout: "not json",
+        stderr: "",
+      }),
+    ).toBeNull();
   });
 });
 

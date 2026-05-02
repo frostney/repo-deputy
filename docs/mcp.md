@@ -53,8 +53,9 @@ Notes:
 
 - `repoUrl` accepts a public git URL or GitHub `owner/repo` shorthand.
 - Repo Deputy uses Vercel Sandbox with a depth-1 git checkout.
-- Sandbox scans run Fallow, lightweight Python/Ruby/Object Pascal/Java analysis,
-  markdownlint, and markdown-link-check and return parsed `toolResults`.
+- Sandbox scans run Fallow, detected lightweight Python/Ruby/Object Pascal/Java
+  analyzers, markdownlint, and markdown-link-check and return parsed
+  `toolResults`.
 - `focus` can be `docs`, `code`, or `full`.
 - `useAi` defaults to `false` so MCP calls are deterministic by default.
 - Local filesystem scans are not part of this MCP tool; add a separate CLI or

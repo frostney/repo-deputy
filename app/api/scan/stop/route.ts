@@ -1,5 +1,5 @@
-import { stopSandboxScanSession } from "@/lib/scan/sandbox";
-import { errorResponse, parseSandboxSession, readJsonBody } from "@/app/api/scan/_shared";
+import { stopSandboxById } from "@/lib/scan/sandbox";
+import { errorResponse, parseSandboxId, readJsonBody } from "@/app/api/scan/_shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,8 +7,8 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
-    const session = parseSandboxSession(await readJsonBody(request));
-    await stopSandboxScanSession(session);
+    const sandboxId = parseSandboxId(await readJsonBody(request));
+    await stopSandboxById(sandboxId);
 
     return Response.json({ ok: true });
   } catch (error) {

@@ -29,11 +29,13 @@ curl -X POST http://localhost:3000/api/scan/session \
   -d '{"repo":"vercel/next.js","focus":"full","ai":false}'
 ```
 
-Run `/api/scan/tool` phases with the returned session, in parallel if desired,
-then call `/api/scan/report` with the accumulated `toolResults`.
+Run `/api/scan/tool` phases for the returned tool ids with the returned
+`sandboxId`, in parallel if desired, then call `/api/scan/report` with the
+accumulated `toolResults`. Language tool ids are returned only for source types
+present in the checked-out repository.
 
-Sandbox scans use a depth-1 git checkout and run Fallow, lightweight
-Python/Ruby/Object Pascal/Java analysis, markdownlint, and markdown-link-check.
+Sandbox scans use a depth-1 git checkout and run Fallow, detected lightweight
+Python/Ruby/Object Pascal/Java analyzers, markdownlint, and markdown-link-check.
 Filesystem/local path scans are not part of the app/API/MCP product surface.
 
 ## MCP

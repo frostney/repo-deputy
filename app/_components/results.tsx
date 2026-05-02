@@ -222,13 +222,13 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                   </span>
                   <button
                     type="button"
-                    aria-label="Toggle details"
-                    onClick={() => setExpanded(expanded === f.id ? null : f.id)}
-                    className={`hidden cursor-pointer border-0 bg-transparent text-text-mute transition-transform ${
-                      expanded === f.id ? "rotate-90" : ""
-                    }`}
+                    onClick={() => {
+                      setExpanded(f.id);
+                      onOpenIssue(f);
+                    }}
+                    className="btn btn-ghost btn-sm"
                   >
-                    <Icon name="chevron-right" size={14} />
+                    <Icon name="search" size={12} /> Inspect
                   </button>
                 </div>
                 {expanded === f.id && (
@@ -377,6 +377,10 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
     title: finding.title,
     path: finding.files.length ? finding.files.join(" · ") : category,
     description: finding.summary,
+    evidence: finding.evidence,
+    files: finding.files,
+    suggestedFix: finding.suggestedFix,
+    confidence: finding.confidence,
     impact: finding.severity === "high" ? "high" : finding.severity,
     effort: "medium",
   };

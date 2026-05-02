@@ -53,8 +53,8 @@ Orchestrates sandbox scans:
 - Creates Vercel Sandbox depth-1 git checkouts.
 - Exposes session, per-tool, report-finalization, and cleanup helpers so API
   phases can share one sandbox.
-- Runs Fallow, lightweight Python/Ruby/Object Pascal/Java analysis, markdownlint,
-  and markdown-link-check for sandbox scans.
+- Runs Fallow, detected lightweight Python/Ruby/Object Pascal/Java analyzers,
+  markdownlint, and markdown-link-check for sandbox scans.
 - Calls report generation or deterministic fallback.
 - Does not read arbitrary local filesystem paths.
 

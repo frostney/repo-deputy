@@ -2,16 +2,16 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import type { ApiToolResult, LogLine, ScanResult } from "./data";
+import type { ApiToolResult, LogLine, ScanCheck, ScanResult } from "./data";
 import { CodeText, Icon, Sym } from "./icons";
 import { SCAN_CHECKS } from "./data";
 
-const SPLIT_SCAN_TOOLS = [
-  "fallow",
-  "light-language-analysis",
-  "markdownlint",
-  "markdown-link-check",
-] as const;
+const SPLIT_SCAN_TOOLS = ["fallow", "markdownlint", "markdown-link-check"] as const;
+
+type LightLanguage = "python" | "ruby" | "pascal" | "java";
+type SplitScanTool =
+  | (typeof SPLIT_SCAN_TOOLS)[number]
+  | `light-language-${LightLanguage}`;
 
 type Props = {
   repo: string;
@@ -24,36 +24,53 @@ export function Scanning({ repo, onComplete }: Props) {
   const [logIdx, setLogIdx] = useState(0);
   const [scanDone, setScanDone] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [scanChecks, setScanChecks] = useState<ScanCheck[]>(SCAN_CHECKS);
   const logLines = scanResult
     ? resultLogLines(repo, scanResult)
-    : progressLogLines(repo, step);
+    : progressLogLines(repo, step, scanChecks);
 
   useEffect(() => {
-    if (step >= SCAN_CHECKS.length) {
+    if (step >= scanChecks.length) {
       setPct(100);
       return;
     }
-    const dur = SCAN_CHECKS[step].duration;
+    const dur = currentStepDuration(scanChecks, step);
     const start = Date.now();
-    const totalDur = SCAN_CHECKS.reduce((s, c) => s + c.duration, 0);
-    const before = SCAN_CHECKS.slice(0, step).reduce((s, c) => s + c.duration, 0);
+    const totalDur = scanChecks.reduce((s, _c, index) => {
+      if (
+        isParallelToolStep(scanChecks, index) &&
+        index > parallelToolStart(scanChecks)
+      ) {
+        return s;
+      }
+      return s + currentStepDuration(scanChecks, index);
+    }, 0);
+    const before = scanChecks.slice(0, step).reduce((s, _c, index) => {
+      if (
+        isParallelToolStep(scanChecks, index) &&
+        index > parallelToolStart(scanChecks)
+      ) {
+        return s;
+      }
+      return s + currentStepDuration(scanChecks, index);
+    }, 0);
     const tick = setInterval(() => {
       const local = Math.min(1, (Date.now() - start) / dur);
       setPct(Math.min(100, ((before + dur * local) / totalDur) * 100));
     }, 60);
-    const advance = setTimeout(() => setStep((s) => s + 1), dur);
+    const advance = setTimeout(() => setStep((s) => nextScanStep(scanChecks, s)), dur);
     return () => {
       clearInterval(tick);
       clearTimeout(advance);
     };
-  }, [step]);
+  }, [scanChecks, step]);
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function scan() {
       try {
-        setScanResult(await runSplitScan(repo, controller.signal));
+        setScanResult(await runSplitScan(repo, controller.signal, setScanChecks));
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -75,31 +92,47 @@ export function Scanning({ repo, onComplete }: Props) {
       return;
     }
 
-    setStep(SCAN_CHECKS.length);
+    setStep(scanChecks.length);
     setPct(100);
-  }, [scanDone]);
+  }, [scanChecks.length, scanDone]);
 
   useEffect(() => {
-    if (step < SCAN_CHECKS.length || !scanDone || !scanResult) {
+    if (step < scanChecks.length || !scanDone || !scanResult) {
       return;
     }
 
     const timer = setTimeout(() => onComplete(scanResult), 700);
     return () => clearTimeout(timer);
-  }, [step, scanDone, scanResult, onComplete]);
+  }, [scanChecks.length, step, scanDone, scanResult, onComplete]);
 
   useEffect(() => {
     const i = setInterval(() => setLogIdx((x) => Math.min(x + 1, logLines.length)), 700);
     return () => clearInterval(i);
   }, [logLines.length]);
 
-  const failedStep = scanResult ? failedStepIndex(scanResult) : null;
+  const failedStep = scanResult ? failedStepIndex(scanResult, scanChecks) : null;
   const stateOf = (i: number): "done" | "active" | "pending" | "error" => {
     if (failedStep !== null) {
       if (i < failedStep) {
         return "done";
       }
       return i === failedStep ? "error" : "pending";
+    }
+
+    if (isParallelToolStep(scanChecks, step)) {
+      const start = parallelToolStart(scanChecks);
+      const end = parallelToolEnd(scanChecks);
+      if (i < start) {
+        return "done";
+      }
+      if (i >= start && i <= end) {
+        return "active";
+      }
+      return "pending";
+    }
+
+    if (isParallelToolStep(scanChecks, i) && step > parallelToolEnd(scanChecks)) {
+      return "done";
     }
 
     return i < step ? "done" : i === step ? "active" : "pending";
@@ -148,7 +181,7 @@ export function Scanning({ repo, onComplete }: Props) {
           </div>
 
           <div className="overflow-hidden rounded-[10px] border border-line bg-ink-2">
-            {SCAN_CHECKS.map((c, i) => {
+            {scanChecks.map((c, i) => {
               const st = stateOf(i);
               return (
                 <div
@@ -268,15 +301,13 @@ export function Scanning({ repo, onComplete }: Props) {
   );
 }
 
-type SplitScanTool = (typeof SPLIT_SCAN_TOOLS)[number];
-
 type SplitScanSession = {
   repo: string;
   repoName?: string;
-  repoUrl: string;
   focus: "docs" | "code" | "full";
   revision?: string;
   scannedFiles?: number;
+  languageFiles?: Partial<Record<LightLanguage, number>>;
   sandbox?: {
     repoUrl: string;
     cloneDepth: number;
@@ -289,10 +320,15 @@ type SplitScanSession = {
 type SplitScanSessionResponse = {
   session: SplitScanSession;
   toolResults: ApiToolResult[];
+  tools: SplitScanTool[];
   ready: boolean;
 };
 
-async function runSplitScan(repo: string, signal: AbortSignal): Promise<ScanResult> {
+async function runSplitScan(
+  repo: string,
+  signal: AbortSignal,
+  onToolsDiscovered: (checks: ScanCheck[]) => void,
+): Promise<ScanResult> {
   let session: SplitScanSession | null = null;
   const toolResults: ApiToolResult[] = [];
 
@@ -309,15 +345,21 @@ async function runSplitScan(repo: string, signal: AbortSignal): Promise<ScanResu
 
     session = sessionResponse.session;
     toolResults.push(...sessionResponse.toolResults);
+    const tools = sessionResponse.ready
+      ? sessionResponse.tools.length
+        ? sessionResponse.tools
+        : [...SPLIT_SCAN_TOOLS]
+      : [];
+    onToolsDiscovered(buildScanChecks(tools));
 
     if (sessionResponse.ready) {
       const analyzerResults = await Promise.all(
-        SPLIT_SCAN_TOOLS.map(async (tool) => {
+        tools.map(async (tool) => {
           try {
             const response = await postJson<{ toolResult: ApiToolResult }>(
               "/api/scan/tool",
               {
-                session,
+                sandboxId: session?.sandbox?.sandboxId,
                 tool,
               },
               signal,
@@ -350,14 +392,14 @@ async function runSplitScan(repo: string, signal: AbortSignal): Promise<ScanResu
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ session }),
+        body: JSON.stringify({ sandboxId: session.sandbox?.sandboxId }),
         keepalive: true,
       });
     } else if (session) {
       await postJson(
         "/api/scan/stop",
         {
-          session,
+          sandboxId: session.sandbox?.sandboxId,
         },
         signal,
       ).catch(() => undefined);
@@ -417,13 +459,123 @@ function scanToolMeta(tool: SplitScanTool) {
   switch (tool) {
     case "fallow":
       return { name: "Fallow" };
-    case "light-language-analysis":
-      return { name: "Lightweight language analysis" };
+    case "light-language-python":
+      return { name: "Python analysis" };
+    case "light-language-ruby":
+      return { name: "Ruby analysis" };
+    case "light-language-pascal":
+      return { name: "Object Pascal analysis" };
+    case "light-language-java":
+      return { name: "Java analysis" };
     case "markdownlint":
       return { name: "markdownlint-cli2" };
     case "markdown-link-check":
       return { name: "markdown-link-check" };
   }
+}
+
+function buildScanChecks(tools: SplitScanTool[]): ScanCheck[] {
+  return [
+    ...SCAN_CHECKS.slice(0, 3),
+    ...tools.map(toolToScanCheck),
+    SCAN_CHECKS[SCAN_CHECKS.length - 1],
+  ];
+}
+
+function toolToScanCheck(tool: SplitScanTool): ScanCheck {
+  switch (tool) {
+    case "fallow":
+      return {
+        id: "fallow",
+        name: "Running Fallow",
+        meta: "dead code · duplication · complexity",
+        duration: 1800,
+      };
+    case "light-language-python":
+      return {
+        id: tool,
+        name: "Checking Python",
+        meta: "complexity · duplication",
+        duration: 1300,
+      };
+    case "light-language-ruby":
+      return {
+        id: tool,
+        name: "Checking Ruby",
+        meta: "complexity · duplication",
+        duration: 1300,
+      };
+    case "light-language-pascal":
+      return {
+        id: tool,
+        name: "Checking Object Pascal",
+        meta: "complexity · duplication",
+        duration: 1300,
+      };
+    case "light-language-java":
+      return {
+        id: tool,
+        name: "Checking Java",
+        meta: "complexity · duplication",
+        duration: 1300,
+      };
+    case "markdownlint":
+      return {
+        id: "markdownlint",
+        name: "Linting Markdown",
+        meta: "markdownlint-cli2",
+        duration: 1400,
+      };
+    case "markdown-link-check":
+      return {
+        id: "markdown-link-check",
+        name: "Checking Markdown links",
+        meta: "markdown-link-check",
+        duration: 1400,
+      };
+  }
+}
+
+function currentStepDuration(checks: ScanCheck[], step: number) {
+  if (!isParallelToolStep(checks, step)) {
+    return checks[step]?.duration ?? 0;
+  }
+
+  const start = parallelToolStart(checks);
+  const end = parallelToolEnd(checks);
+  return Math.max(...checks.slice(start, end + 1).map((check) => check.duration));
+}
+
+function nextScanStep(checks: ScanCheck[], step: number) {
+  if (isParallelToolStep(checks, step)) {
+    return parallelToolEnd(checks) + 1;
+  }
+
+  return step + 1;
+}
+
+function isParallelToolStep(checks: ScanCheck[], step: number) {
+  const start = parallelToolStart(checks);
+  const end = parallelToolEnd(checks);
+  return start >= 0 && step >= start && step <= end;
+}
+
+function parallelToolStart(checks: ScanCheck[]) {
+  return checks.findIndex((check) => isAnalyzerToolId(check.id));
+}
+
+function parallelToolEnd(checks: ScanCheck[]) {
+  const reportIndex = checks.findIndex((check) => check.id === "report");
+  return reportIndex > 0 ? reportIndex - 1 : checks.length - 1;
+}
+
+function isAnalyzerToolId(id: string) {
+  return (
+    id === "fallow" ||
+    id.startsWith("light-language-") ||
+    id === "markdownlint" ||
+    id === "markdown-link-check"
+  );
 }
 
 function scanErrorResult(repo: string, error: unknown): ScanResult {
@@ -450,8 +602,15 @@ function scanErrorResult(repo: string, error: unknown): ScanResult {
   };
 }
 
-function progressLogLines(repo: string, step: number): LogLine[] {
-  const visibleChecks = SCAN_CHECKS.slice(0, Math.min(step + 1, SCAN_CHECKS.length));
+function progressLogLines(
+  repo: string,
+  step: number,
+  scanChecks: ScanCheck[],
+): LogLine[] {
+  const visibleEnd = isParallelToolStep(scanChecks, step)
+    ? parallelToolEnd(scanChecks) + 1
+    : Math.min(step + 1, scanChecks.length);
+  const visibleChecks = scanChecks.slice(0, visibleEnd);
 
   return [
     {
@@ -459,7 +618,10 @@ function progressLogLines(repo: string, step: number): LogLine[] {
       text: `Starting split sandbox scan for ${repo}`,
     },
     ...visibleChecks.map((check, index) => ({
-      t: index < step ? ("ok" as const) : ("info" as const),
+      t:
+        index < step || (isParallelToolStep(scanChecks, step) && index < step)
+          ? ("ok" as const)
+          : ("info" as const),
       text: `${index < step ? "✓" : "→"} ${check.name} · ${check.meta}`,
     })),
   ];
@@ -501,7 +663,7 @@ function resultLogLines(repo: string, result: ScanResult): LogLine[] {
   return lines;
 }
 
-function failedStepIndex(result: ScanResult) {
+function failedStepIndex(result: ScanResult, scanChecks: ScanCheck[]) {
   const failedTool = result.toolResults.find((tool) => tool.status === "error");
 
   if (!failedTool) {
@@ -517,18 +679,10 @@ function failedStepIndex(result: ScanResult) {
   if (failedTool.id === "sandbox-bun-setup") {
     return 2;
   }
-  if (failedTool.id === "fallow") {
-    return 3;
-  }
-  if (failedTool.id === "light-language-analysis") {
-    return 4;
-  }
-  if (failedTool.id === "markdownlint") {
-    return 5;
-  }
-  if (failedTool.id === "markdown-link-check") {
-    return 6;
+  const toolIndex = scanChecks.findIndex((check) => check.id === failedTool.id);
+  if (toolIndex >= 0) {
+    return toolIndex;
   }
 
-  return SCAN_CHECKS.length - 1;
+  return scanChecks.length - 1;
 }

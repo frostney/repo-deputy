@@ -107,8 +107,8 @@ curl -X POST http://localhost:3000/api/scan/session \
   -d '{"repo":"vercel/next.js","focus":"full","ai":false}'
 ```
 
-Use the returned session with `/api/scan/tool`, then pass accumulated
-`toolResults` to `/api/scan/report`.
+Use the returned `tools` list and `sandboxId` with `/api/scan/tool`, then pass
+the session and accumulated `toolResults` to `/api/scan/report`.
 
 ## Local MCP Server
 

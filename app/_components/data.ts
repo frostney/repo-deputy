@@ -9,6 +9,10 @@ export type Finding = {
   title: string;
   path: string;
   description: string;
+  evidence?: string[];
+  files?: string[];
+  suggestedFix?: string;
+  confidence?: number;
   impact: string;
   effort: string;
 };
@@ -22,6 +26,7 @@ export type ApiFinding = {
   evidence: string[];
   files: string[];
   suggestedFix: string;
+  confidence?: number;
 };
 
 export type ApiToolResult = {
@@ -258,12 +263,6 @@ export const SCAN_CHECKS: ScanCheck[] = [
     name: "Running Fallow",
     meta: "dead code · duplication · complexity",
     duration: 1800,
-  },
-  {
-    id: "light-language-analysis",
-    name: "Checking polyglot sources",
-    meta: "Python · Ruby · Pascal · Java",
-    duration: 1300,
   },
   {
     id: "markdownlint",

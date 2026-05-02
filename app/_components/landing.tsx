@@ -132,7 +132,7 @@ export function Landing({ onAudit }: Props) {
             </div>
           </div>
           <div className="flex-1" />
-          <div className="text-right">
+          <div className="hidden text-right">
             <div className="text-[32px] font-semibold leading-none text-oxblood">
               12,847
             </div>

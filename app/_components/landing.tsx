@@ -148,7 +148,7 @@ export function Landing({ onAudit }: Props) {
               type="text"
               value={url}
               onChange={(event) => {
-                setUrl(normalizeRepoInput(event.target.value));
+                setUrl(normalizeRepoInput(event.target.value, "typing"));
                 setError("");
               }}
               placeholder="owner/repo  —  public GitHub repository"
@@ -275,8 +275,8 @@ export function Landing({ onAudit }: Props) {
   );
 }
 
-function normalizeRepoInput(value: string) {
-  const trimmed = value.trim();
+function normalizeRepoInput(value: string, mode: "submit" | "typing" = "submit") {
+  const trimmed = mode === "typing" ? value.trimStart() : value.trim();
   if (!trimmed) {
     return "";
   }
@@ -290,14 +290,20 @@ function normalizeRepoInput(value: string) {
       if (owner && repo) {
         return `${owner}/${repo}`;
       }
+      if (mode === "typing" && owner) {
+        return url.pathname.endsWith("/") ? `${owner}/` : owner;
+      }
     }
   } catch {
     // Fall through to prefix stripping for partial input.
   }
 
-  return trimmed
+  const withoutGithubPrefix = trimmed
     .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
     .replace(/^(www\.)?github\.com\//i, "")
-    .replace(/\.git$/i, "")
-    .replace(/\/$/u, "");
+    .replace(/\.git$/i, "");
+
+  return mode === "typing"
+    ? withoutGithubPrefix
+    : withoutGithubPrefix.replace(/\/$/u, "");
 }

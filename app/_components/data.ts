@@ -257,8 +257,8 @@ export const SCAN_CHECKS: ScanCheck[] = [
   },
   {
     id: "light-language-analysis",
-    name: "Checking Python/Ruby/Pascal",
-    meta: "complexity · duplication",
+    name: "Checking polyglot sources",
+    meta: "Python · Ruby · Pascal · Java",
     duration: 1300,
   },
   {

@@ -47,19 +47,20 @@ JSON output from the sandbox scanner. Fallow findings are converted into Repo
 Deputy findings for dead code/module graph issues, duplicate code groups, and
 complexity hotspots in TypeScript/JavaScript projects.
 
-## Lightweight Python/Ruby/Object Pascal Analysis
+## Lightweight Python/Ruby/Object Pascal/Java Analysis
 
 Implemented in `lib/review/light-language.ts`.
 
 The analyzer runs in-process with Bun/TypeScript over collected source text. It
-does not require Python, Ruby, Delphi, Free Pascal, RuboCop, Ruff, or any other
-language runtime. It checks:
+does not require Python, Ruby, Delphi, Free Pascal, Java, RuboCop, Ruff, or any
+other language runtime. It checks:
 
 - Python files: `.py`, `.pyi`, `.pyw`.
 - Ruby files: `.rb`, `.rake`, `.gemspec`, plus `Rakefile`, `Gemfile`,
   `Guardfile`, and `Capfile`.
 - Object Pascal/Delphi/Free Pascal files: `.pas`, `.pp`, `.lpr`, `.dpr`,
   `.dpk`, and Pascal-looking `.inc` files.
+- Java files: `.java`.
 
 The v1 checks are intentionally heuristic:
 
@@ -79,8 +80,8 @@ Remote repository scans create an ephemeral Vercel Sandbox from a git source
 with `depth: 1`, install Bun in the sandbox if needed, then run:
 
 - Fallow for code graph, duplication, and health analysis.
-- Lightweight Python/Ruby/Object Pascal analysis for heuristic complexity and
-  duplicate-block findings.
+- Lightweight Python/Ruby/Object Pascal/Java analysis for heuristic complexity
+  and duplicate-block findings.
 - `markdownlint-cli2` for Markdown style and structure diagnostics.
 - `markdown-link-check` for broken Markdown links.
 

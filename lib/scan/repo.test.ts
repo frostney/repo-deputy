@@ -28,6 +28,7 @@ describe("collectRepoScanContext", () => {
     expect(filenames).toContain("lib/script.py");
     expect(filenames).toContain("lib/task.rb");
     expect(filenames).toContain("lib/unit.pas");
+    expect(filenames).toContain("lib/App.java");
     expect(
       context.changedFiles.some((file) => file.filename.includes("node_modules")),
     ).toBe(false);
@@ -85,7 +86,7 @@ describe("runRepoScan", () => {
       "light-language-analysis",
     );
     expect(result.report.findings.map((finding) => finding.id)).toContain(
-      "light-language-duplication",
+      "light-language-python-duplication",
     );
   });
 });
@@ -122,6 +123,10 @@ async function createFixtureRepo() {
   );
   await writeFile(path.join(rootPath, "lib/script.py"), "def ok():\n    return 1\n");
   await writeFile(path.join(rootPath, "lib/task.rb"), "def ok\n  1\nend\n");
+  await writeFile(
+    path.join(rootPath, "lib/App.java"),
+    "public final class App { public int ok() { return 1; } }\n",
+  );
   await writeFile(
     path.join(rootPath, "lib/unit.pas"),
     "unit Unit1;\ninterface\nimplementation\nend.\n",

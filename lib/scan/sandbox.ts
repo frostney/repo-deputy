@@ -121,7 +121,9 @@ function isCandidatePath(filePath: string) {
   const lowerPath = filePath.toLowerCase();
   const basename = lowerPath.split("/").at(-1) ?? lowerPath;
   return (
-    /\\.(py|pyi|pyw|rb|rake|gemspec|pas|pp|lpr|dpr|dpk|inc)$/.test(lowerPath) ||
+    /\\.(py|pyi|pyw|rb|rake|gemspec|pas|pp|lpr|dpr|dpk|inc|java)$/.test(
+      lowerPath,
+    ) ||
     RUBY_BASENAMES.has(basename)
   );
 }

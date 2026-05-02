@@ -50,7 +50,7 @@ Collects local repository context and orchestrates scans:
 - Reads text-like source, docs, config, and example files.
 - Builds a `ReviewContext` with `scope: "repo"`.
 - Runs deterministic checks for the selected focus.
-- Runs Fallow, lightweight Python/Ruby/Object Pascal analysis, markdownlint,
+- Runs Fallow, lightweight Python/Ruby/Object Pascal/Java analysis, markdownlint,
   and markdown-link-check for sandbox scans.
 - Calls report generation or deterministic fallback.
 - Writes sanitized memory when memory is enabled.
@@ -66,7 +66,7 @@ Owns product intelligence:
 - Docs drift checks.
 - Code drift checks.
 - Real Fallow JSON adapter and external tool result parsing.
-- In-process lightweight Python/Ruby/Object Pascal complexity and duplication
+- In-process lightweight Python/Ruby/Object Pascal/Java complexity and duplication
   analysis that does not require language runtimes.
 - Markdown lint and Markdown link-check parsing.
 - Vercel AI Gateway report generation.

@@ -35,7 +35,7 @@ const IGNORE_DIRS = new Set([
 const MAX_FILE_BYTES = 180_000;
 const MAX_TOTAL_FILES = 700;
 const TEXT_FILE_PATTERN =
-  /\.(cjs|css|env|gemspec|inc|js|json|jsx|lpr|md|mdx|mjs|pas|pp|py|pyi|pyw|rake|rb|ts|tsx|txt|yaml|yml)$/i;
+  /\.(cjs|css|env|gemspec|inc|java|js|json|jsx|lpr|md|mdx|mjs|pas|pp|py|pyi|pyw|rake|rb|ts|tsx|txt|yaml|yml)$/i;
 const TEXT_FILE_BASENAMES = new Set(["Capfile", "Gemfile", "Guardfile", "Rakefile"]);
 
 export async function runRepoScan(input: RepoScanInput = { focus: "full" }) {
@@ -288,7 +288,7 @@ function isScannablePath(filePath: string) {
 function isLightLanguageCandidatePath(filePath: string) {
   const basename = path.basename(filePath);
   return (
-    /\.(gemspec|inc|lpr|pas|pp|py|pyi|pyw|rake|rb)$/i.test(filePath) ||
+    /\.(gemspec|inc|java|lpr|pas|pp|py|pyi|pyw|rake|rb)$/i.test(filePath) ||
     TEXT_FILE_BASENAMES.has(basename)
   );
 }

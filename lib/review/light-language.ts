@@ -22,7 +22,7 @@ const HIGH_BRANCH_COUNT = 20;
 const HIGH_STRUCTURAL_SCORE = 32;
 const HIGH_LINE_COUNT = 180;
 
-type SourceLanguage = "python" | "ruby" | "pascal";
+type SourceLanguage = "python" | "ruby" | "pascal" | "java";
 
 type SourceFile = {
   path: string;
@@ -66,6 +66,13 @@ type DuplicateGroup = {
 };
 
 const RUBY_BASENAMES = new Set(["capfile", "gemfile", "guardfile", "rakefile"]);
+const LANGUAGE_ORDER: SourceLanguage[] = ["python", "ruby", "pascal", "java"];
+const LANGUAGE_LABELS: Record<SourceLanguage, string> = {
+  java: "Java",
+  pascal: "Object Pascal",
+  python: "Python",
+  ruby: "Ruby",
+};
 
 const LOW_SIGNAL_LINES = new Set([
   "begin",
@@ -74,6 +81,9 @@ const LOW_SIGNAL_LINES = new Set([
   "end",
   "end.",
   "end;",
+  "{",
+  "}",
+  "};",
   "pass",
   "then",
 ]);
@@ -137,22 +147,32 @@ export function analyzeLightLanguageFiles(files: SourceFile[]): ToolCheckIssue[]
 }
 
 function analyzeSources(sources: ClassifiedSource[]) {
-  const issues: ToolCheckIssue[] = [];
-  const complexity = buildComplexityIssue(sources);
-  const duplication = buildDuplicationIssue(sources);
+  return LANGUAGE_ORDER.flatMap((language) => {
+    const languageSources = sources.filter((source) => source.language === language);
+    if (languageSources.length === 0) {
+      return [];
+    }
 
-  if (complexity) {
-    issues.push(complexity);
-  }
+    const issues: ToolCheckIssue[] = [];
+    const complexity = buildComplexityIssue(language, languageSources);
+    const duplication = buildDuplicationIssue(language, languageSources);
 
-  if (duplication) {
-    issues.push(duplication);
-  }
+    if (complexity) {
+      issues.push(complexity);
+    }
 
-  return issues;
+    if (duplication) {
+      issues.push(duplication);
+    }
+
+    return issues;
+  });
 }
 
-function buildComplexityIssue(sources: ClassifiedSource[]): ToolCheckIssue | null {
+function buildComplexityIssue(
+  language: SourceLanguage,
+  sources: ClassifiedSource[],
+): ToolCheckIssue | null {
   const hotspots = sources
     .flatMap(scoreSourceComplexity)
     .filter(isComplexityHotspot)
@@ -173,15 +193,14 @@ function buildComplexityIssue(sources: ClassifiedSource[]): ToolCheckIssue | nul
   const files = unique(hotspots.map((hotspot) => hotspot.path));
 
   return {
-    id: "light-language-complexity",
-    title: `Lightweight analyzer found ${hotspots.length} structural complexity hotspot${
-      hotspots.length === 1 ? "" : "s"
-    }`,
+    id: `light-language-${language}-complexity`,
+    title: `Lightweight ${LANGUAGE_LABELS[language]} analyzer found ${
+      hotspots.length
+    } structural complexity hotspot${hotspots.length === 1 ? "" : "s"}`,
     severity,
     category: "architecture-drift",
     path: files[0],
-    message:
-      "Lightweight language analysis found heuristic structural complexity hotspots in Python, Ruby, or Object Pascal code.",
+    message: `Lightweight language analysis found heuristic structural complexity hotspots in ${LANGUAGE_LABELS[language]} code.`,
     evidence: hotspots
       .slice(0, MAX_COMPLEXITY_EVIDENCE)
       .map(
@@ -193,7 +212,10 @@ function buildComplexityIssue(sources: ClassifiedSource[]): ToolCheckIssue | nul
   };
 }
 
-function buildDuplicationIssue(sources: ClassifiedSource[]): ToolCheckIssue | null {
+function buildDuplicationIssue(
+  language: SourceLanguage,
+  sources: ClassifiedSource[],
+): ToolCheckIssue | null {
   const groups = findDuplicateGroups(sources);
   if (groups.length === 0) {
     return null;
@@ -209,15 +231,14 @@ function buildDuplicationIssue(sources: ClassifiedSource[]): ToolCheckIssue | nu
   );
 
   return {
-    id: "light-language-duplication",
-    title: `Lightweight analyzer found ${groups.length} duplicate code block${
-      groups.length === 1 ? "" : "s"
-    }`,
+    id: `light-language-${language}-duplication`,
+    title: `Lightweight ${LANGUAGE_LABELS[language]} analyzer found ${
+      groups.length
+    } duplicate code block${groups.length === 1 ? "" : "s"}`,
     severity,
     category: "code-drift",
     path: files[0],
-    message:
-      "Lightweight language analysis found repeated normalized code blocks in Python, Ruby, or Object Pascal code.",
+    message: `Lightweight language analysis found repeated normalized code blocks in ${LANGUAGE_LABELS[language]} code.`,
     evidence: groups.slice(0, MAX_DUPLICATE_GROUPS).map(formatDuplicateGroup),
     suggestedFix:
       "Compare the duplicate blocks and extract shared helpers or remove stale parallel implementations where the behavior should stay in sync.",
@@ -236,7 +257,7 @@ function buildScanLimitIssue(skipped: Required<SkippedCounts>): ToolCheckIssue |
     severity: skipped.totalLimit > 0 ? "medium" : "low",
     category: "code-drift",
     message:
-      "Lightweight language analysis did not inspect every matching Python, Ruby, or Object Pascal file because collection limits were reached.",
+      "Lightweight language analysis did not inspect every matching Python, Ruby, Object Pascal, or Java file because collection limits were reached.",
     evidence: [
       `Files too large: ${skipped.tooLarge}`,
       `Files skipped by total-size limit: ${skipped.totalLimit}`,
@@ -254,6 +275,10 @@ function scoreSourceComplexity(source: ClassifiedSource): RoutineScore[] {
 
   if (source.language === "ruby") {
     return scoreRubyRoutines(source);
+  }
+
+  if (source.language === "java") {
+    return scoreJavaRoutines(source);
   }
 
   return scorePascalRoutines(source);
@@ -419,6 +444,44 @@ function scorePascalRoutines(source: ClassifiedSource): RoutineScore[] {
   return routines;
 }
 
+function scoreJavaRoutines(source: ClassifiedSource): RoutineScore[] {
+  const rawLines = source.content.split(/\r?\n/);
+  const lines = stripJavaComments(rawLines);
+  const routines: RoutineScore[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const clean = lines[index].trim();
+    const match = clean.match(
+      /^(?:(?:public|private|protected|static|final|synchronized|abstract|native|strictfp|default)\s+)*(?:<[^>]+>\s*)?(?:(?:[A-Za-z_$][\w.$<>,?]*(?:\[\])*\s+)+)?([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{/,
+    );
+    if (!match || isJavaControlKeyword(match[1])) {
+      continue;
+    }
+
+    let depth = javaBraceDelta(clean);
+    let endIndex = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      depth += javaBraceDelta(lines[cursor]);
+      if (depth <= 0) {
+        endIndex = cursor;
+        break;
+      }
+    }
+
+    routines.push(
+      scoreRoutine({
+        path: source.path,
+        language: "java",
+        name: match[1],
+        line: index + 1,
+        bodyLines: lines.slice(index + 1, endIndex),
+      }),
+    );
+  }
+
+  return routines;
+}
+
 function scoreRoutine(input: {
   path: string;
   language: SourceLanguage;
@@ -455,6 +518,8 @@ function scoreRoutine(input: {
         blockDepth = Math.max(0, blockDepth - 1);
       }
       blockDepth += rubyOpenerCount(clean);
+    } else if (input.language === "java") {
+      blockDepth = Math.max(0, blockDepth + javaBraceDelta(clean));
     } else if (input.language === "pascal") {
       blockDepth += pascalBeginCount(clean);
       blockDepth = Math.max(0, blockDepth - pascalEndCount(clean));
@@ -537,7 +602,11 @@ function findDuplicateGroups(sources: ClassifiedSource[]) {
 function normalizeSourceLines(source: ClassifiedSource): SourceLine[] {
   const rawLines = source.content.split(/\r?\n/);
   const lines =
-    source.language === "pascal" ? stripPascalComments(rawLines) : rawLines.slice();
+    source.language === "pascal"
+      ? stripPascalComments(rawLines)
+      : source.language === "java"
+        ? stripJavaComments(rawLines)
+        : rawLines.slice();
   const normalized: SourceLine[] = [];
   let rubyBlockComment = false;
 
@@ -552,11 +621,13 @@ function normalizeSourceLines(source: ClassifiedSource): SourceLine[] {
           })
         : source.language === "python"
           ? stripPythonRubyLine(lines[index])
-          : lines[index].replace(/\/\/.*$/, "");
+          : source.language === "java"
+            ? lines[index].replace(/\/\/.*$/, "")
+            : lines[index].replace(/\/\/.*$/, "");
 
     text = replaceStringLiterals(text, source.language).replace(/\s+/g, " ").trim();
 
-    if (source.language === "pascal") {
+    if (source.language === "pascal" || source.language === "java") {
       text = text.toLowerCase();
     }
 
@@ -679,6 +750,10 @@ function classifySource(file: SourceFile): SourceLanguage | null {
     return "python";
   }
 
+  if (/\.java$/.test(lowerPath)) {
+    return "java";
+  }
+
   if (/\.(rb|rake|gemspec)$/.test(lowerPath) || RUBY_BASENAMES.has(basename)) {
     return "ruby";
   }
@@ -710,18 +785,19 @@ function summarizeResult(
   skipped: Required<SkippedCounts>,
 ) {
   if (sources.length === 0 && skippedTotal(skipped) === 0) {
-    return "No supported Python, Ruby, or Object Pascal files were found.";
+    return "No supported Python, Ruby, Object Pascal, or Java files were found.";
   }
 
   if (sources.length === 0) {
-    return `No supported Python, Ruby, or Object Pascal files were analyzed; source collection skipped ${skippedTotal(
+    return `No supported Python, Ruby, Object Pascal, or Java files were analyzed; source collection skipped ${skippedTotal(
       skipped,
     )} file${skippedTotal(skipped) === 1 ? "" : "s"}.`;
   }
 
-  const complexity = issues.some((issue) => issue.id === "light-language-complexity");
-  const duplication = issues.some((issue) => issue.id === "light-language-duplication");
+  const complexity = issues.some((issue) => issue.id.endsWith("-complexity"));
+  const duplication = issues.some((issue) => issue.id.endsWith("-duplication"));
   const limit = issues.some((issue) => issue.id === "light-language-scan-limit");
+  const languageSummary = summarizeLanguages(sources);
   const parts = [
     complexity ? "structural complexity hotspots" : "",
     duplication ? "duplicate code blocks" : "",
@@ -729,16 +805,14 @@ function summarizeResult(
   ].filter(Boolean);
 
   return parts.length
-    ? `Lightweight language analysis inspected ${sources.length} Python, Ruby, or Object Pascal file${
-        sources.length === 1 ? "" : "s"
-      } and reported ${parts.join(", ")}.`
-    : `Lightweight language analysis inspected ${sources.length} Python, Ruby, or Object Pascal file${
-        sources.length === 1 ? "" : "s"
-      } without structural complexity or duplicate-block findings.`;
+    ? `Lightweight language analysis inspected ${languageSummary} and reported ${parts.join(
+        ", ",
+      )}.`
+    : `Lightweight language analysis inspected ${languageSummary} without structural complexity or duplicate-block findings.`;
 }
 
 function cleanLineForComplexity(line: string, language: SourceLanguage) {
-  if (language === "pascal") {
+  if (language === "pascal" || language === "java") {
     return replaceStringLiterals(line.replace(/\/\/.*$/, ""), language);
   }
   return replaceStringLiterals(stripPythonRubyLine(line), language);
@@ -766,6 +840,21 @@ function countBranches(line: string, language: SourceLanguage) {
         "until",
         "rescue",
       ]) + countSymbolMatches(lower, ["&&", "||"])
+    );
+  }
+
+  if (language === "java") {
+    return (
+      countWordMatches(lower, [
+        "if",
+        "else",
+        "for",
+        "while",
+        "catch",
+        "case",
+        "switch",
+        "try",
+      ]) + countSymbolMatches(lower, ["&&", "||", "?"])
     );
   }
 
@@ -805,6 +894,25 @@ function pascalBeginCount(line: string) {
 
 function pascalEndCount(line: string) {
   return countWordMatches(line.toLowerCase(), ["end", "until"]);
+}
+
+function javaBraceDelta(line: string) {
+  return countSymbolMatches(line, ["{"]) - countSymbolMatches(line, ["}"]);
+}
+
+function isJavaControlKeyword(value: string) {
+  return new Set([
+    "catch",
+    "do",
+    "else",
+    "for",
+    "if",
+    "new",
+    "switch",
+    "synchronized",
+    "try",
+    "while",
+  ]).has(value);
 }
 
 function countWordMatches(value: string, words: string[]) {
@@ -894,6 +1002,42 @@ function stripPascalComments(lines: string[]) {
   return stripped;
 }
 
+function stripJavaComments(lines: string[]) {
+  const stripped: string[] = [];
+  let blockComment = false;
+
+  for (const line of lines) {
+    let output = "";
+    for (let index = 0; index < line.length; index += 1) {
+      const current = line[index];
+      const next = line[index + 1];
+
+      if (blockComment) {
+        if (current === "*" && next === "/") {
+          blockComment = false;
+          index += 1;
+        }
+        continue;
+      }
+
+      if (current === "/" && next === "*") {
+        blockComment = true;
+        index += 1;
+        continue;
+      }
+
+      if (current === "/" && next === "/") {
+        break;
+      }
+
+      output += current;
+    }
+    stripped.push(output);
+  }
+
+  return stripped;
+}
+
 function replaceStringLiterals(value: string, language: SourceLanguage) {
   if (language === "pascal") {
     return value.replace(/'(?:''|[^'])*'/g, "<string>");
@@ -969,6 +1113,18 @@ function normalizeSkippedCounts(skipped: SkippedCounts | undefined) {
     totalLimit: skipped?.totalLimit ?? 0,
     unreadable: skipped?.unreadable ?? 0,
   };
+}
+
+function summarizeLanguages(sources: ClassifiedSource[]) {
+  return LANGUAGE_ORDER.map((language) => {
+    const count = sources.filter((source) => source.language === language).length;
+    if (count === 0) {
+      return "";
+    }
+    return `${count} ${LANGUAGE_LABELS[language]} file${count === 1 ? "" : "s"}`;
+  })
+    .filter(Boolean)
+    .join(", ");
 }
 
 function skippedTotal(skipped: Required<SkippedCounts>) {

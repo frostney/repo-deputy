@@ -15,7 +15,9 @@ describe("analyzeLightLanguageFiles", () => {
       },
     ]);
 
-    const complexity = issues.find((issue) => issue.id === "light-language-complexity");
+    const complexity = issues.find(
+      (issue) => issue.id === "light-language-python-complexity",
+    );
     expect(complexity?.path).toBe("src/workflow.py");
     expect(complexity?.evidence.join("\n")).toContain("src/workflow.py:1");
     expect(complexity?.evidence.join("\n")).toContain("branch count");
@@ -29,7 +31,9 @@ describe("analyzeLightLanguageFiles", () => {
       },
     ]);
 
-    const complexity = issues.find((issue) => issue.id === "light-language-complexity");
+    const complexity = issues.find(
+      (issue) => issue.id === "light-language-ruby-complexity",
+    );
     expect(complexity?.path).toBe("lib/workflow.rb");
     expect(complexity?.evidence.join("\n")).toContain("lib/workflow.rb:1");
   });
@@ -42,10 +46,27 @@ describe("analyzeLightLanguageFiles", () => {
       },
     ]);
 
-    const complexity = issues.find((issue) => issue.id === "light-language-complexity");
+    const complexity = issues.find(
+      (issue) => issue.id === "light-language-pascal-complexity",
+    );
     expect(complexity?.path).toBe("src/workflow.pas");
     expect(complexity?.evidence.join("\n")).toContain("src/workflow.pas:9");
     expect(complexity?.evidence.join("\n")).not.toContain("OnlyDeclared");
+  });
+
+  test("reports Java structural complexity hotspots", () => {
+    const issues = analyzeLightLanguageFiles([
+      {
+        path: "src/Workflow.java",
+        content: javaComplexityFixture(),
+      },
+    ]);
+
+    const complexity = issues.find(
+      (issue) => issue.id === "light-language-java-complexity",
+    );
+    expect(complexity?.path).toBe("src/Workflow.java");
+    expect(complexity?.evidence.join("\n")).toContain("src/Workflow.java:2");
   });
 
   test("detects duplicate Python blocks", () => {
@@ -54,7 +75,9 @@ describe("analyzeLightLanguageFiles", () => {
       { path: "src/b.py", content: pythonDuplicateFixture("beta") },
     ]);
 
-    const duplication = issues.find((issue) => issue.id === "light-language-duplication");
+    const duplication = issues.find(
+      (issue) => issue.id === "light-language-python-duplication",
+    );
     expect(duplication?.evidence.join("\n")).toContain("src/a.py");
     expect(duplication?.evidence.join("\n")).toContain("src/b.py");
   });
@@ -65,7 +88,7 @@ describe("analyzeLightLanguageFiles", () => {
       { path: "lib/b.rb", content: rubyDuplicateFixture("beta") },
     ]);
 
-    expect(issues.map((issue) => issue.id)).toContain("light-language-duplication");
+    expect(issues.map((issue) => issue.id)).toContain("light-language-ruby-duplication");
   });
 
   test("detects duplicate Pascal blocks", () => {
@@ -74,7 +97,18 @@ describe("analyzeLightLanguageFiles", () => {
       { path: "src/b.pas", content: pascalDuplicateFixture("Beta") },
     ]);
 
-    expect(issues.map((issue) => issue.id)).toContain("light-language-duplication");
+    expect(issues.map((issue) => issue.id)).toContain(
+      "light-language-pascal-duplication",
+    );
+  });
+
+  test("detects duplicate Java blocks", () => {
+    const issues = analyzeLightLanguageFiles([
+      { path: "src/A.java", content: javaDuplicateFixture("alpha") },
+      { path: "src/B.java", content: javaDuplicateFixture("beta") },
+    ]);
+
+    expect(issues.map((issue) => issue.id)).toContain("light-language-java-duplication");
   });
 
   test("ignores comment-only and whitespace-only duplicate matches", () => {
@@ -88,7 +122,7 @@ describe("analyzeLightLanguageFiles", () => {
       { path: "src/b.py", content: repeatedComments },
     ]);
 
-    expect(issues.map((issue) => issue.id)).not.toContain("light-language-duplication");
+    expect(issues.map((issue) => issue.id).join("\n")).not.toContain("duplication");
   });
 
   test("classifies Ruby basenames and extensions", () => {
@@ -118,6 +152,28 @@ describe("analyzeLightLanguageFiles", () => {
     });
 
     expect(result.status).not.toBe("skipped");
+  });
+
+  test("classifies Java source files", () => {
+    const result = buildLightLanguageToolResult({
+      files: [{ path: "src/Workflow.java", content: javaComplexityFixture() }],
+    });
+
+    expect(result.status).not.toBe("skipped");
+    expect(result.summary).toContain("Java");
+  });
+
+  test("runs duplicate analysis separately per detected language", () => {
+    const issues = analyzeLightLanguageFiles([
+      { path: "src/a.py", content: pythonDuplicateFixture("alpha") },
+      { path: "src/b.py", content: pythonDuplicateFixture("beta") },
+      { path: "src/A.java", content: javaDuplicateFixture("alpha") },
+      { path: "src/B.java", content: javaDuplicateFixture("beta") },
+    ]);
+
+    const issueIds = issues.map((issue) => issue.id);
+    expect(issueIds).toContain("light-language-python-duplication");
+    expect(issueIds).toContain("light-language-java-duplication");
   });
 
   test("does not classify generic .inc files as Pascal", () => {
@@ -234,6 +290,22 @@ function pascalComplexityFixture() {
   ].join("\n");
 }
 
+function javaComplexityFixture() {
+  return [
+    "public final class Workflow {",
+    "  public int reconcile(Map<String, Boolean> value) {",
+    "    int total = 0;",
+    ...Array.from(
+      { length: 12 },
+      (_, index) =>
+        `    if (value.get("flag_${index}") && value.get("ready_${index}")) {\n      total += ${index};\n    }`,
+    ),
+    "    return total;",
+    "  }",
+    "}",
+  ].join("\n");
+}
+
 function pythonDuplicateFixture(name: string) {
   return [
     `def ${name}():`,
@@ -281,5 +353,22 @@ function pascalDuplicateFixture(name: string) {
     "  RenderInvoiceResponse(InvoiceLines, BillingProfile, RiskSummary);",
     "end;",
     "end.",
+  ].join("\n");
+}
+
+function javaDuplicateFixture(name: string) {
+  return [
+    "public final class Invoice {",
+    `  public InvoiceResponse ${name}() {`,
+    "    var customerProfile = loadCustomerProfileWithHistory(accountId, regionCode);",
+    "    var billingProfile = normalizeBillingProfileForInvoiceRun(customerProfile);",
+    "    var usageRecords = collectUsageRecordsForStatementWindow(customerProfile);",
+    "    var riskSummary = calculateAccountRiskSummaryForOperations(customerProfile);",
+    "    var invoiceLines = buildInvoiceLinesFromUsageRecords(usageRecords);",
+    "    var auditContext = createAuditContextForFinanceReconciliation(customerProfile);",
+    "    publishFinanceAuditEvent(auditContext, billingProfile, riskSummary);",
+    "    return renderInvoiceResponse(invoiceLines, billingProfile, riskSummary);",
+    "  }",
+    "}",
   ].join("\n");
 }

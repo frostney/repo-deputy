@@ -10,7 +10,7 @@ The current scope is a whole-repository drift scanner with two surfaces:
 It scans the checked-out repository for docs drift, stale setup commands, env
 documentation gaps, duplicate generated helpers, dependency drift, route naming
 drift, TypeScript/JavaScript health through Fallow, and lightweight
-Python/Ruby/Object Pascal complexity and duplication signals.
+Python/Ruby/Object Pascal/Java complexity and duplication signals.
 
 ## Run Locally
 
@@ -34,7 +34,7 @@ curl "http://localhost:3000/api/scan?repo=vercel/next.js&focus=full&ai=false"
 ```
 
 Sandbox scans use a depth-1 git checkout and run Fallow, lightweight
-Python/Ruby/Object Pascal analysis, markdownlint, and markdown-link-check.
+Python/Ruby/Object Pascal/Java analysis, markdownlint, and markdown-link-check.
 Local path scans do not need Sandbox credentials.
 
 ## MCP

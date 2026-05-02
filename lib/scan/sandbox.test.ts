@@ -45,7 +45,7 @@ describe("parseSandboxLanguageSourcePayload", () => {
     expect(result.id).toBe("light-language-analysis");
     expect(result.status).toBe("failed");
     expect(result.issues.map((issue) => issue.id)).toContain(
-      "light-language-duplication",
+      "light-language-python-duplication",
     );
   });
 

@@ -4,7 +4,7 @@
 
 - Bun 1.3.9 or compatible.
 - Optional Vercel AI Gateway API key for model-backed report generation.
-- Optional Mubit API key for long-term repo memory.
+- Optional Mubit API key for long-term repo memory and public scan counters.
 - Optional Vercel Sandbox credentials for remote repository scans.
 
 ## Install
@@ -41,7 +41,8 @@ Gateway. If it is missing, Repo Deputy falls back to a deterministic report.
 fall back before the request times out.
 
 `MUBIT_ENABLED=true` and `MUBIT_API_KEY` are both required before Repo Deputy
-uses Mubit. If either is missing, the fallback memory adapter is used.
+uses Mubit. If either is missing, repo memory falls back safely and public scan
+counters are unavailable rather than written to local storage.
 
 Vercel Sandbox uses `VERCEL_OIDC_TOKEN` when available. Outside Vercel, set
 `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and `VERCEL_TOKEN` before remote

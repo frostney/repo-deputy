@@ -1,5 +1,6 @@
 import { runRepoScan } from "@/lib/scan/repo";
 import type { ReviewFocus } from "@/lib/review/types";
+import { recordScanRun } from "@/lib/scan/stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
     runExternalTools,
   });
 
-  return Response.json({
+  const response = {
     repo: result.context.repo,
     repoUrl: result.context.sandbox?.repoUrl,
     rootPath: result.context.rootPath,
@@ -34,7 +35,20 @@ export async function GET(request: Request) {
     markdown: result.markdown,
     memoryUsed: result.report.memoryUsed ?? [],
     toolResults: result.report.toolResults ?? [],
+  };
+
+  await recordScanRun({
+    repo: response.repo,
+    repoUrl: response.repoUrl,
+    scannedFiles: response.scannedFiles,
+  }).catch((error) => {
+    console.warn(
+      "Repo Deputy stats write failed; continuing without counter update.",
+      error,
+    );
   });
+
+  return Response.json(response);
 }
 
 function parseFocus(value: string | null): ReviewFocus {

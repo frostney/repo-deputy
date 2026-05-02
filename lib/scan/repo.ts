@@ -1,4 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
 import path from "node:path";
 import { getRepoMemory, writeScanMemory } from "@/lib/memory/repo-memory";
 import type { RepoMemoryEvent } from "@/lib/memory/types";
@@ -78,7 +79,7 @@ export async function collectRepoScanContext(
   input: RepoScanInput = { focus: "full" },
 ): Promise<ReviewContext> {
   const rootPath = path.resolve(
-    input.rootPath ?? /* turbopackIgnore: true */ process.cwd(),
+    input.rootPath ?? /*turbopackIgnore: true*/ process.cwd(),
   );
   const files = await readRepoFiles(rootPath);
   const repoName = path.basename(rootPath);
@@ -132,7 +133,15 @@ async function readRepoFiles(rootPath: string) {
       return;
     }
 
-    const entries = await readdir(directory, { withFileTypes: true });
+    let entries: Dirent[];
+    try {
+      entries = await readdir(/*turbopackIgnore: true*/ directory, {
+        withFileTypes: true,
+      });
+    } catch {
+      return;
+    }
+
     for (const entry of entries) {
       if (files.length >= MAX_TOTAL_FILES) {
         return;
@@ -158,14 +167,27 @@ async function readRepoFiles(rootPath: string) {
         continue;
       }
 
-      const fileStat = await stat(absolutePath);
+      let fileStat: Stats;
+      try {
+        fileStat = await stat(/*turbopackIgnore: true*/ absolutePath);
+      } catch {
+        continue;
+      }
+
       if (fileStat.size > MAX_FILE_BYTES) {
+        continue;
+      }
+
+      let content: string;
+      try {
+        content = await readFile(/*turbopackIgnore: true*/ absolutePath, "utf8");
+      } catch {
         continue;
       }
 
       files.push({
         path: relativePath,
-        content: await readFile(absolutePath, "utf8"),
+        content,
         size: fileStat.size,
       });
     }

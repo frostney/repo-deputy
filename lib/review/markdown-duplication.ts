@@ -228,7 +228,7 @@ export function runMarkdownDuplicationChecks(context: ReviewContext): Finding[] 
 }
 
 function loadMarkdownDocs(context: ReviewContext): MarkdownDoc[] {
-  if (context.rootPath && existsSync(context.rootPath)) {
+  if (context.rootPath && existsSync(/*turbopackIgnore: true*/ context.rootPath)) {
     return readMarkdownDocsFromRoot(context.rootPath);
   }
 
@@ -258,7 +258,9 @@ function readMarkdownDocsFromRoot(rootPath: string): MarkdownDoc[] {
   function walk(directory: string) {
     let entries: Dirent[];
     try {
-      entries = readdirSync(directory, { withFileTypes: true });
+      entries = readdirSync(/*turbopackIgnore: true*/ directory, {
+        withFileTypes: true,
+      });
     } catch {
       return;
     }
@@ -284,8 +286,8 @@ function readMarkdownDocsFromRoot(rootPath: string): MarkdownDoc[] {
 
       let realPath = absolutePath;
       try {
-        realPath = lstatSync(absolutePath).isSymbolicLink()
-          ? realpathSync(absolutePath)
+        realPath = lstatSync(/*turbopackIgnore: true*/ absolutePath).isSymbolicLink()
+          ? realpathSync(/*turbopackIgnore: true*/ absolutePath)
           : absolutePath;
       } catch {
         continue;
@@ -300,7 +302,7 @@ function readMarkdownDocsFromRoot(rootPath: string): MarkdownDoc[] {
         docs.push({
           path: relativePath,
           absolutePath,
-          content: readFileSync(absolutePath, "utf8"),
+          content: readFileSync(/*turbopackIgnore: true*/ absolutePath, "utf8"),
         });
       } catch {}
     }

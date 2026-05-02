@@ -29,6 +29,8 @@ Prefer docs drift and repo truthfulness issues over style comments.
 Be concise, practical, and specific.
 Output a concise GitHub Flavored Markdown scan report.`;
 
+const DEFAULT_AI_GATEWAY_TIMEOUT_MS = 6_000;
+
 const findingSchema = z.object({
   id: z.string(),
   category: z.enum([
@@ -73,6 +75,9 @@ export async function generateDeputyReport(input: {
     const result = await generateObject({
       model: getGatewayModel(),
       schema: reportSchema,
+      timeout: readAiGatewayTimeoutMs(),
+      maxRetries: 0,
+      maxOutputTokens: 1_500,
       prompt: buildPrompt(input),
     });
 
@@ -132,6 +137,19 @@ export function buildFallbackReport(
     ...report,
     markdown: reportToMarkdown(report, { focus }),
   };
+}
+
+export function readAiGatewayTimeoutMs(value = process.env.AI_GATEWAY_TIMEOUT_MS) {
+  if (!value) {
+    return DEFAULT_AI_GATEWAY_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number(value);
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1_000) {
+    return DEFAULT_AI_GATEWAY_TIMEOUT_MS;
+  }
+
+  return Math.min(timeoutMs, 25_000);
 }
 
 function buildPrompt(input: {

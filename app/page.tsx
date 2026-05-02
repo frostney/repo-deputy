@@ -1,116 +1,91 @@
-import { runRepoScan } from "@/lib/scan/repo";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useState } from "react";
+import type { Finding } from "./_components/data";
+import { IssueDetail } from "./_components/issue-detail";
+import { Landing } from "./_components/landing";
+import { PRCreate } from "./_components/pr-create";
+import { PROpened } from "./_components/pr-opened";
+import { Results } from "./_components/results";
+import { Scanning } from "./_components/scanning";
+import { ThemeToggle } from "./_components/theme-toggle";
 
-export default async function Home() {
-  const result = await runRepoScan({ focus: "full", useMemory: false });
-  const findings = result.report.findings;
-  const highCount = findings.filter((finding) => finding.severity === "high").length;
-  const docsCount = findings.filter(
-    (finding) => finding.category === "docs-drift",
-  ).length;
-  const codeCount = findings.filter(
-    (finding) => finding.category !== "docs-drift",
-  ).length;
+type Screen = "landing" | "scan" | "results" | "pr" | "done";
+type PR = { count: number; files: number; branch: string; title: string };
+
+const DEFAULT_PR: PR = {
+  count: 4,
+  files: 8,
+  branch: "repo-deputy/audit-00482",
+  title: "chore: deputize · clean up drift, dupes, and stale docs",
+};
+
+export default function Home() {
+  const [screen, setScreen] = useState<Screen>("landing");
+  const [repo, setRepo] = useState("vercel/next.js");
+  const [issue, setIssue] = useState<Finding | null>(null);
+  const [preselected, setPreselected] = useState<string[] | null>(null);
+  const [pr, setPr] = useState<PR | null>(null);
+
+  const startAudit = (r: string) => {
+    setRepo(r);
+    setScreen("scan");
+  };
+
+  const goLanding = () => {
+    setScreen("landing");
+    setIssue(null);
+    setPreselected(null);
+  };
 
   return (
-    <main className="shell">
-      <section className="hero" aria-labelledby="page-title">
-        <p className="eyebrow">Whole-repo scanner</p>
-        <h1 id="page-title">Repo Deputy</h1>
-        <p className="lede">
-          Scans the repository for docs drift, env docs gaps, duplicate generated code,
-          dependency drift, route naming drift, and architecture truthfulness.
-        </p>
-      </section>
+    <div className="relative z-[1] flex min-h-screen flex-col">
+      <ThemeToggle />
+      {screen === "landing" && <Landing onAudit={startAudit} />}
+      {screen === "scan" && (
+        <Scanning repo={repo} onComplete={() => setScreen("results")} />
+      )}
+      {screen === "results" && (
+        <Results
+          repo={repo}
+          onOpenIssue={(f) => setIssue(f)}
+          onPropose={() => {
+            setPreselected(null);
+            setScreen("pr");
+          }}
+          onHome={goLanding}
+        />
+      )}
+      {screen === "pr" && (
+        <PRCreate
+          repo={repo}
+          onBack={() => setScreen("results")}
+          preselected={preselected}
+          onSubmit={(p) => {
+            setPr(p);
+            setScreen("done");
+          }}
+        />
+      )}
+      {screen === "done" && (
+        <PROpened
+          repo={repo}
+          pr={pr ?? DEFAULT_PR}
+          onBack={() => setScreen("results")}
+          onView={goLanding}
+        />
+      )}
 
-      <section className="summary-band" aria-label="Current scan summary">
-        <div>
-          <p className="metric-label">Merge confidence</p>
-          <p className="metric-value">
-            {formatConfidence(result.report.mergeConfidence)}
-          </p>
-        </div>
-        <div>
-          <p className="metric-label">Files scanned</p>
-          <p className="metric-value">{result.context.changedFiles.length}</p>
-        </div>
-        <div>
-          <p className="metric-label">Findings</p>
-          <p className="metric-value">{findings.length}</p>
-        </div>
-        <div>
-          <p className="metric-label">High risk</p>
-          <p className="metric-value">{highCount}</p>
-        </div>
-      </section>
-
-      <section className="status-grid" aria-label="Repo Deputy scan channels">
-        <div className="status-block accent-green">
-          <h2>App endpoint</h2>
-          <code>/api/scan</code>
-          <p>Returns JSON for the current repository scan.</p>
-        </div>
-
-        <div className="status-block accent-blue">
-          <h2>MCP command</h2>
-          <code>bun run mcp</code>
-          <p>Starts the local stdio MCP server for agent workflows.</p>
-        </div>
-
-        <div className="status-block accent-amber">
-          <h2>Current mix</h2>
-          <p>
-            {docsCount} docs drift / {codeCount} code or architecture drift
-          </p>
-        </div>
-      </section>
-
-      <section className="findings-section" aria-labelledby="findings-title">
-        <div className="section-heading">
-          <p className="eyebrow">Scan report</p>
-          <h2 id="findings-title">Current findings</h2>
-        </div>
-
-        {findings.length === 0 ? (
-          <p className="empty-state">
-            No repo truthfulness drift found by the deterministic scanner.
-          </p>
-        ) : (
-          <div className="finding-list">
-            {findings.slice(0, 8).map((finding) => (
-              <article className="finding" key={finding.id}>
-                <div className="finding-header">
-                  <span className={`severity severity-${finding.severity}`}>
-                    {finding.severity}
-                  </span>
-                  <span className="category">{finding.category.replace("-", " ")}</span>
-                </div>
-                <h3>{finding.title}</h3>
-                <p>{finding.summary}</p>
-                <ul>
-                  {finding.files.slice(0, 4).map((file) => (
-                    <li key={file}>
-                      <code>{file}</code>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <footer className="footer">
-        Powered by Next.js, Vercel AI Gateway, Mubit, MCP, and Bun
-      </footer>
-    </main>
+      {issue && (
+        <IssueDetail
+          issue={issue}
+          onClose={() => setIssue(null)}
+          onPropose={(ids) => {
+            setPreselected(ids);
+            setScreen("pr");
+          }}
+        />
+      )}
+    </div>
   );
-}
-
-function formatConfidence(value: string) {
-  return value
-    .split("-")
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
 }

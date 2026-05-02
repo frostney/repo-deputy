@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Finding } from "./_components/data";
+import type { Finding, ScanResult } from "./_components/data";
 import { IssueDetail } from "./_components/issue-detail";
 import { Landing } from "./_components/landing";
 import { PRCreate } from "./_components/pr-create";
@@ -26,9 +26,11 @@ export default function Home() {
   const [issue, setIssue] = useState<Finding | null>(null);
   const [preselected, setPreselected] = useState<string[] | null>(null);
   const [pr, setPr] = useState<PR | null>(null);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   const startAudit = (r: string) => {
     setRepo(r);
+    setScanResult(null);
     setScreen("scan");
   };
 
@@ -43,11 +45,18 @@ export default function Home() {
       <ThemeToggle />
       {screen === "landing" && <Landing onAudit={startAudit} />}
       {screen === "scan" && (
-        <Scanning repo={repo} onComplete={() => setScreen("results")} />
+        <Scanning
+          repo={repo}
+          onComplete={(result) => {
+            setScanResult(result);
+            setScreen("results");
+          }}
+        />
       )}
       {screen === "results" && (
         <Results
           repo={repo}
+          scanResult={scanResult}
           onOpenIssue={(f) => setIssue(f)}
           onPropose={() => {
             setPreselected(null);

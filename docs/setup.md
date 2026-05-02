@@ -5,6 +5,7 @@
 - Bun 1.3.9 or compatible.
 - Optional Vercel AI Gateway API key for model-backed report generation.
 - Optional Mubit API key for long-term repo memory.
+- Optional Vercel Sandbox credentials for remote repository scans.
 
 ## Install
 
@@ -26,6 +27,11 @@ AI_GATEWAY_MODEL=anthropic/claude-sonnet-4.6
 MUBIT_ENABLED=false
 MUBIT_API_KEY=
 MUBIT_PROJECT_PREFIX=repo-deputy
+
+VERCEL_OIDC_TOKEN=
+VERCEL_TEAM_ID=
+VERCEL_PROJECT_ID=
+VERCEL_TOKEN=
 ```
 
 `AI_GATEWAY_API_KEY` enables model-backed report summarization through Vercel AI
@@ -33,6 +39,10 @@ Gateway. If it is missing, Repo Deputy falls back to a deterministic report.
 
 `MUBIT_ENABLED=true` and `MUBIT_API_KEY` are both required before Repo Deputy
 uses Mubit. If either is missing, the fallback memory adapter is used.
+
+Vercel Sandbox uses `VERCEL_OIDC_TOKEN` when available. Outside Vercel, set
+`VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and `VERCEL_TOKEN` before remote
+repository scans. Local path scans do not require Sandbox credentials.
 
 ## Local Development
 
@@ -51,6 +61,15 @@ http://localhost:3000/api/scan?focus=full
 Supported focus values are `docs`, `code`, and `full`. Add `ai=false` for
 deterministic fallback reporting, or `memory=true` to opt into memory reads and
 writes when Mubit is configured.
+
+Remote repository scans use Vercel Sandbox and a shallow git checkout:
+
+```txt
+http://localhost:3000/api/scan?repo=vercel/next.js&focus=full&ai=false
+```
+
+The sandbox scan runs Fallow, markdownlint, and markdown-link-check, then
+returns parsed `toolResults` alongside Repo Deputy findings.
 
 ## MCP Server
 

@@ -57,4 +57,40 @@ describe("reportToMarkdown", () => {
     expect(withMemory).toContain("### Repo memory used");
     expect(withMemory).toContain("- This repo previously drifted from Bun setup docs.");
   });
+
+  test("includes external tool results when present", () => {
+    const markdown = reportToMarkdown(
+      {
+        ...baseReport,
+        toolResults: [
+          {
+            id: "fallow",
+            name: "Fallow",
+            command: "bunx fallow --format json",
+            status: "failed",
+            exitCode: 1,
+            summary: "Fallow reported 2 duplicate groups.",
+            issues: [
+              {
+                id: "fallow-duplication",
+                title: "Fallow found duplicate code",
+                severity: "medium",
+                category: "code-drift",
+                path: "src/a.ts",
+                line: 4,
+                message: "Repeated logic exists.",
+                evidence: ["src/a.ts:4"],
+                suggestedFix: "Consolidate the duplicate logic.",
+              },
+            ],
+          },
+        ],
+      },
+      { focus: "full" },
+    );
+
+    expect(markdown).toContain("### Tool checks");
+    expect(markdown).toContain("- Fallow: found issues (exit 1)");
+    expect(markdown).toContain("src/a.ts:4: Fallow found duplicate code");
+  });
 });

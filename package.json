@@ -18,6 +18,7 @@
     "@ai-sdk/gateway": "^3.0.109",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@mubit-ai/sdk": "^0.7.0",
+    "@vercel/sandbox": "^1.10.0",
     "ai": "^6.0.174",
     "next": "^16.2.4",
     "react": "^19.2.5",

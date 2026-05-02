@@ -8,9 +8,9 @@ surfaces: the Next.js app and a local stdio MCP server.
 ```txt
 Next.js app or MCP tool
   -> lib/scan/repo.ts
-  -> local repository file collection
+  -> local repository file collection or depth-1 Vercel Sandbox git checkout
   -> optional Mubit memory read
-  -> deterministic docs/code drift checks
+  -> deterministic docs/code drift checks or sandbox tool checks
   -> Vercel AI Gateway report generation or deterministic fallback
   -> optional Mubit memory write
   -> dashboard, JSON, or MCP tool response
@@ -21,7 +21,7 @@ Next.js app or MCP tool
 ### `app/page.tsx`
 
 Renders the dashboard from a live scan of the current repository. It is an
-operational view, not a marketing page and not a paste-URL scanner.
+operational view, not a marketing page or generic code review surface.
 
 ### `app/api/scan/route.ts`
 
@@ -35,18 +35,22 @@ Runs a scan and returns JSON:
 - `findings`
 - `markdown`
 - `memoryUsed`
+- `toolResults`
 
 It supports `?focus=docs`, `?focus=code`, `?focus=full`, `?ai=false`, and
-`?memory=true`.
+`?memory=true`. Passing `?repo=owner/repo` or a public git URL switches to the
+Vercel Sandbox scan path.
 
 ### `lib/scan/`
 
 Collects local repository context and orchestrates scans:
 
 - Walks the repository with size and directory limits.
+- Creates Vercel Sandbox depth-1 git checkouts for remote `repoUrl` scans.
 - Reads text-like source, docs, config, and example files.
 - Builds a `ReviewContext` with `scope: "repo"`.
 - Runs deterministic checks for the selected focus.
+- Runs Fallow, markdownlint, and markdown-link-check for sandbox scans.
 - Calls report generation or deterministic fallback.
 - Writes sanitized memory when memory is enabled.
 
@@ -60,7 +64,8 @@ Owns product intelligence:
 - Shared review and finding types.
 - Docs drift checks.
 - Code drift checks.
-- Fallow placeholder adapter shape.
+- Real Fallow JSON adapter and external tool result parsing.
+- Markdown lint and Markdown link-check parsing.
 - Vercel AI Gateway report generation.
 - GitHub Flavored Markdown rendering.
 - Seeded fallback findings for demo viability.

@@ -424,10 +424,32 @@ async function postJson<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`${path} failed with ${response.status}`);
+    const payload = await response.json().catch(() => null);
+    throw new Error(
+      readScanErrorMessage(payload) ?? `${path} failed with ${response.status}`,
+    );
   }
 
   return (await response.json()) as T;
+}
+
+function readScanErrorMessage(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as { error?: unknown; summary?: unknown; message?: unknown };
+  if (typeof record.error === "string" && record.error) {
+    return record.error;
+  }
+  if (typeof record.summary === "string" && record.summary) {
+    return record.summary;
+  }
+  if (typeof record.message === "string" && record.message) {
+    return record.message;
+  }
+
+  return null;
 }
 
 function scanToolRequestError(tool: SplitScanTool, error: unknown): ApiToolResult {

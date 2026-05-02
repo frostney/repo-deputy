@@ -1,4 +1,5 @@
 import { finishSandboxScanSession } from "@/lib/scan/sandbox";
+import { recordScanRun } from "@/lib/scan/stats";
 import {
   errorResponse,
   parseSandboxSession,
@@ -30,8 +31,20 @@ export async function POST(request: Request) {
       toolResults,
       useAi,
     });
+    const response = scanResultResponse(result);
 
-    return Response.json(scanResultResponse(result));
+    await recordScanRun({
+      repo: response.repo,
+      repoUrl: response.repoUrl,
+      scannedFiles: response.scannedFiles,
+    }).catch((error) => {
+      console.warn(
+        "Repo Deputy stats write failed; continuing without counter update.",
+        error,
+      );
+    });
+
+    return Response.json(response);
   } catch (error) {
     return errorResponse(error);
   }

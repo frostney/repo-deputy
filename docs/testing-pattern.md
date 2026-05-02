@@ -36,11 +36,11 @@ should name the behavior owner.
 
 Prioritize deterministic, product-critical behavior:
 
-- Scan context collection from a temporary repository fixture.
+- Sandbox payload parsing and sandbox scan orchestration boundaries.
 - Report markdown structure.
 - Finding sorting, category counts, and fallback behavior.
 - Memory sanitization and no-fail wrappers.
-- Docs/code drift check output for realistic local file fixtures.
+- Docs/code drift check output for realistic in-memory file fixtures.
 - Legacy command parsing only where it supports MCP/demo compatibility.
 
 Avoid tests that call live external services. Mubit and AI Gateway behavior
@@ -52,14 +52,32 @@ Prefer simple arrange-act-assert tests:
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { collectRepoScanContext } from "./repo";
+import { runDocsDriftChecks } from "./docs-drift";
+import type { ReviewContext } from "./types";
 
-describe("collectRepoScanContext", () => {
-  test("collects package and docs files from a repo fixture", async () => {
-    const context = await collectRepoScanContext({ focus: "full", rootPath });
+describe("runDocsDriftChecks", () => {
+  test("flags stale package-manager docs from a fixture", () => {
+    const context = {
+      scope: "repo",
+      repo: "local/example",
+      command: "scan",
+      focus: "full",
+      changedFiles: [],
+      docsFiles: [],
+      packageJson: {
+        path: "package.json",
+        content: JSON.stringify({ packageManager: "bun@1.3.9" }),
+      },
+      packageInfo: { packageManager: "bun@1.3.9" },
+      readme: { path: "README.md", content: "Run npm install." },
+      envExample: null,
+      memoryInsights: [],
+      toolResults: [],
+    } satisfies ReviewContext;
 
-    expect(context.scope).toBe("repo");
-    expect(context.packageJson?.path).toBe("package.json");
+    expect(runDocsDriftChecks(context).map((finding) => finding.id)).toContain(
+      "docs-bun-install-command",
+    );
   });
 });
 ```
@@ -99,7 +117,7 @@ bun test lib/scan/repo.test.ts
 Run a name filter:
 
 ```bash
-bun test -t "collectRepoScanContext"
+bun test -t "flags stale package-manager docs"
 ```
 
 ## CI Expectations

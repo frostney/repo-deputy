@@ -94,6 +94,7 @@ function checksForFocus(focus: ReviewFocus | undefined) {
     return [
       "code drift",
       "duplicated generated code",
+      "detected Python/Ruby/Object Pascal/Java complexity and duplication",
       "dependency drift",
       "architecture boundaries",
       "relevant repo memory",
@@ -105,6 +106,7 @@ function checksForFocus(focus: ReviewFocus | undefined) {
     "code drift",
     "env docs",
     "duplicated generated code",
+    "detected Python/Ruby/Object Pascal/Java complexity and duplication",
     "route/API naming drift",
     "relevant repo memory",
   ];

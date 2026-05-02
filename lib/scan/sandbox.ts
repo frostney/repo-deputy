@@ -1,10 +1,12 @@
 import { Sandbox } from "@vercel/sandbox";
 import { buildFallbackReport, generateDeputyReport } from "@/lib/review/generate-report";
 import {
-  buildFallowToolResult,
-  FALLOW_COMMAND,
-  toolIssuesToFindings,
-} from "@/lib/review/fallow";
+  buildLightLanguageToolResult,
+  LIGHT_LANGUAGE_ANALYSIS_LANGUAGES,
+  lightLanguageToolId,
+  type SourceLanguage,
+} from "@/lib/review/light-language";
+import { buildFallowToolResult, FALLOW_COMMAND } from "@/lib/review/fallow";
 import {
   buildMarkdownLinkCheckToolResult,
   buildMarkdownlintToolResult,
@@ -16,8 +18,10 @@ import type {
   RepoScanInput,
   RepoScanResult,
   ReviewContext,
+  SandboxScanMetadata,
   ToolCheckResult,
 } from "@/lib/review/types";
+import { toolIssuesToFindings } from "@/lib/review/tool-results";
 
 type SandboxCommandOutput = {
   command: string;
@@ -33,9 +37,47 @@ type RepoLocator = {
   repoUrl: string;
 };
 
+export const SANDBOX_SCAN_TOOL_IDS = [
+  "fallow",
+  "light-language-python",
+  "light-language-ruby",
+  "light-language-pascal",
+  "light-language-java",
+  "markdownlint",
+  "markdown-link-check",
+] as const;
+
+export type SandboxScanToolId = (typeof SANDBOX_SCAN_TOOL_IDS)[number];
+
+export type SandboxScanSession = {
+  repo: string;
+  repoName?: string;
+  focus: RepoScanInput["focus"];
+  revision?: string;
+  scannedFiles?: number;
+  languageFiles?: Partial<Record<SourceLanguage, number>>;
+  sandbox?: SandboxScanMetadata;
+};
+
+export type SandboxScanSessionResult = {
+  session: SandboxScanSession;
+  toolResults: ToolCheckResult[];
+  tools: SandboxScanToolId[];
+  ready: boolean;
+};
+
 const CLONE_DEPTH = 1;
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000;
 const SANDBOX_REPO_DIR = "/vercel/sandbox/repo";
+const MAX_SANDBOX_LANGUAGE_FILES = 2_000;
+const MAX_SANDBOX_LANGUAGE_FILE_BYTES = 500_000;
+const MAX_SANDBOX_LANGUAGE_TOTAL_BYTES = 25_000_000;
+const LIGHT_LANGUAGE_LABELS: Record<SourceLanguage, string> = {
+  java: "Java",
+  pascal: "Object Pascal",
+  python: "Python",
+  ruby: "Ruby",
+};
 
 const INSTALL_BUN_COMMAND = [
   "if command -v bun >/dev/null 2>&1; then bun --version; exit 0; fi",
@@ -45,9 +87,268 @@ const INSTALL_BUN_COMMAND = [
   '"$HOME/.bun/bin/bun" --version',
 ].join(" && ");
 
+const SANDBOX_LANGUAGE_SOURCE_COMMAND = `cat > /tmp/repo-deputy-language-source.ts <<'REPO_DEPUTY_LANGUAGE_SOURCE'
+import { readFile, stat } from "node:fs/promises";
+
+const MAX_FILES = ${MAX_SANDBOX_LANGUAGE_FILES};
+const MAX_FILE_BYTES = ${MAX_SANDBOX_LANGUAGE_FILE_BYTES};
+const MAX_TOTAL_BYTES = ${MAX_SANDBOX_LANGUAGE_TOTAL_BYTES};
+const TARGET_LANGUAGE = "__TARGET_LANGUAGE__";
+const RUBY_BASENAMES = new Set(["capfile", "gemfile", "guardfile", "rakefile"]);
+
+const git = Bun.spawnSync({
+  cmd: ["git", "ls-files", "-z"],
+  stdout: "pipe",
+  stderr: "pipe",
+});
+
+if (git.exitCode !== 0) {
+  throw new Error(new TextDecoder().decode(git.stderr).trim() || "git ls-files failed");
+}
+
+const paths = new TextDecoder().decode(git.stdout).split("\\0").filter(Boolean);
+const files: Array<{ path: string; content: string; size: number }> = [];
+const skipped = {
+  tooLarge: 0,
+  unsupported: 0,
+  totalLimit: 0,
+  unreadable: 0,
+};
+let totalBytes = 0;
+
+for (const filePath of paths) {
+  const normalizedPath = filePath.replaceAll("\\\\", "/");
+  if (isIgnoredPath(normalizedPath) || !isCandidatePath(normalizedPath)) {
+    continue;
+  }
+
+  let fileStat: { size: number };
+  try {
+    fileStat = await stat(normalizedPath);
+  } catch {
+    skipped.unreadable += 1;
+    continue;
+  }
+
+  if (fileStat.size > MAX_FILE_BYTES) {
+    skipped.tooLarge += 1;
+    continue;
+  }
+
+  if (files.length >= MAX_FILES || totalBytes + fileStat.size > MAX_TOTAL_BYTES) {
+    skipped.totalLimit += 1;
+    continue;
+  }
+
+  let content: string;
+  try {
+    content = await readFile(normalizedPath, "utf8");
+  } catch {
+    skipped.unreadable += 1;
+    continue;
+  }
+
+  if (normalizedPath.toLowerCase().endsWith(".inc") && !looksLikePascal(content)) {
+    skipped.unsupported += 1;
+    continue;
+  }
+
+  files.push({ path: normalizedPath, content, size: fileStat.size });
+  totalBytes += fileStat.size;
+}
+
+console.log(JSON.stringify({ files, skipped }));
+
+function isCandidatePath(filePath: string) {
+  const lowerPath = filePath.toLowerCase();
+  const basename = lowerPath.split("/").at(-1) ?? lowerPath;
+  if (TARGET_LANGUAGE === "python") {
+    return /\\.(py|pyi|pyw)$/.test(lowerPath);
+  }
+  if (TARGET_LANGUAGE === "ruby") {
+    return /\\.(rb|rake|gemspec)$/.test(lowerPath) || RUBY_BASENAMES.has(basename);
+  }
+  if (TARGET_LANGUAGE === "pascal") {
+    return /\\.(pas|pp|lpr|dpr|dpk|inc)$/.test(lowerPath);
+  }
+  return /\\.java$/.test(lowerPath);
+}
+
+function isIgnoredPath(filePath: string) {
+  const lowerPath = filePath.toLowerCase();
+  return (
+    lowerPath.startsWith(".git/") ||
+    lowerPath.startsWith(".next/") ||
+    lowerPath.startsWith(".turbo/") ||
+    lowerPath.startsWith("coverage/") ||
+    lowerPath.startsWith("dist/") ||
+    lowerPath.startsWith("node_modules/") ||
+    lowerPath.startsWith("out/") ||
+    lowerPath.startsWith(".venv/") ||
+    lowerPath.startsWith("venv/") ||
+    lowerPath.includes("/__pycache__/") ||
+    lowerPath.startsWith("__pycache__/") ||
+    lowerPath.startsWith(".bundle/") ||
+    lowerPath.startsWith("vendor/bundle/") ||
+    lowerPath.includes("/site-packages/") ||
+    lowerPath.startsWith("site-packages/") ||
+    lowerPath.startsWith("build/") ||
+    lowerPath.startsWith("target/")
+  );
+}
+
+function looksLikePascal(content: string) {
+  return /\\b(unit|interface|implementation|procedure|function|begin)\\b|end\\.|\\{\\$/i.test(
+    content,
+  );
+}
+REPO_DEPUTY_LANGUAGE_SOURCE
+timeout 120s bun --silent /tmp/repo-deputy-language-source.ts`;
+
+const SANDBOX_LANGUAGE_MANIFEST_COMMAND = `cat > /tmp/repo-deputy-language-manifest.ts <<'REPO_DEPUTY_LANGUAGE_MANIFEST'
+import { open } from "node:fs/promises";
+
+const RUBY_BASENAMES = new Set(["capfile", "gemfile", "guardfile", "rakefile"]);
+const counts: Record<"python" | "ruby" | "pascal" | "java", number> = {
+  java: 0,
+  pascal: 0,
+  python: 0,
+  ruby: 0,
+};
+
+const git = Bun.spawnSync({
+  cmd: ["git", "ls-files", "-z"],
+  stdout: "pipe",
+  stderr: "pipe",
+});
+
+if (git.exitCode !== 0) {
+  throw new Error(new TextDecoder().decode(git.stderr).trim() || "git ls-files failed");
+}
+
+const paths = new TextDecoder().decode(git.stdout).split("\\0").filter(Boolean);
+
+for (const filePath of paths) {
+  const normalizedPath = filePath.replaceAll("\\\\", "/");
+  if (isIgnoredPath(normalizedPath)) {
+    continue;
+  }
+
+  const language = classifyPath(normalizedPath);
+  if (!language) {
+    continue;
+  }
+
+  if (language === "pascal-inc") {
+    const prefix = await readPrefix(normalizedPath);
+    if (looksLikePascal(prefix)) {
+      counts.pascal += 1;
+    }
+    continue;
+  }
+
+  counts[language] += 1;
+}
+
+console.log(
+  JSON.stringify({
+    languages: Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([language, count]) => ({ language, count })),
+  }),
+);
+
+function classifyPath(filePath: string) {
+  const lowerPath = filePath.toLowerCase();
+  const basename = lowerPath.split("/").at(-1) ?? lowerPath;
+  if (/\\.(py|pyi|pyw)$/.test(lowerPath)) {
+    return "python";
+  }
+  if (/\\.(rb|rake|gemspec)$/.test(lowerPath) || RUBY_BASENAMES.has(basename)) {
+    return "ruby";
+  }
+  if (/\\.(pas|pp|lpr|dpr|dpk)$/.test(lowerPath)) {
+    return "pascal";
+  }
+  if (/\\.inc$/.test(lowerPath)) {
+    return "pascal-inc";
+  }
+  if (/\\.java$/.test(lowerPath)) {
+    return "java";
+  }
+  return null;
+}
+
+function isIgnoredPath(filePath: string) {
+  const lowerPath = filePath.toLowerCase();
+  return (
+    lowerPath.startsWith(".git/") ||
+    lowerPath.startsWith(".next/") ||
+    lowerPath.startsWith(".turbo/") ||
+    lowerPath.startsWith("coverage/") ||
+    lowerPath.startsWith("dist/") ||
+    lowerPath.startsWith("node_modules/") ||
+    lowerPath.startsWith("out/") ||
+    lowerPath.startsWith(".venv/") ||
+    lowerPath.startsWith("venv/") ||
+    lowerPath.includes("/__pycache__/") ||
+    lowerPath.startsWith("__pycache__/") ||
+    lowerPath.startsWith(".bundle/") ||
+    lowerPath.startsWith("vendor/bundle/") ||
+    lowerPath.includes("/site-packages/") ||
+    lowerPath.startsWith("site-packages/") ||
+    lowerPath.startsWith("build/") ||
+    lowerPath.startsWith("target/")
+  );
+}
+
+async function readPrefix(filePath: string) {
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(20_000);
+    const result = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.toString("utf8", 0, result.bytesRead);
+  } catch {
+    return "";
+  } finally {
+    await handle.close();
+  }
+}
+
+function looksLikePascal(content: string) {
+  return /\\b(unit|interface|implementation|procedure|function|begin)\\b|end\\.|\\{\\$/i.test(
+    content,
+  );
+}
+REPO_DEPUTY_LANGUAGE_MANIFEST
+timeout 60s bun --silent /tmp/repo-deputy-language-manifest.ts`;
+
 export async function runSandboxRepoScan(
   input: RepoScanInput & { repoUrl: string },
 ): Promise<RepoScanResult> {
+  const sessionResult = await createSandboxScanSession(input);
+  const toolResults = [...sessionResult.toolResults];
+
+  if (sessionResult.ready) {
+    toolResults.push(
+      ...(await Promise.all(
+        sessionResult.tools.map((toolId) =>
+          runSandboxScanTool(sessionResult.session.sandbox?.sandboxId, toolId),
+        ),
+      )),
+    );
+  }
+
+  return finishSandboxScanSession({
+    session: sessionResult.session,
+    toolResults,
+    useAi: input.useAi,
+  });
+}
+
+export async function createSandboxScanSession(
+  input: RepoScanInput & { repoUrl: string },
+): Promise<SandboxScanSessionResult> {
   const locator = normalizeRepoLocator(input.repoUrl);
   const context = createSandboxContext(input, locator);
 
@@ -65,63 +366,183 @@ export async function runSandboxRepoScan(
       sandboxId: sandbox.sandboxId,
     };
 
-    try {
-      const clone = await runSandboxCommand(
+    const clone = await runSandboxCommand(sandbox, buildGitCloneCommand(locator, input));
+    context.toolResults.push(buildGitCloneResult(clone, locator));
+
+    if (clone.exitCode !== 0) {
+      return {
+        session: sandboxSessionFromContext(context),
+        toolResults: context.toolResults,
+        tools: [],
+        ready: false,
+      };
+    }
+
+    const setup = await runSandboxCommand(sandbox, INSTALL_BUN_COMMAND);
+    context.toolResults.push(buildSetupResult(setup));
+
+    if (setup.exitCode !== 0) {
+      return {
+        session: sandboxSessionFromContext(context),
+        toolResults: context.toolResults,
+        tools: [],
+        ready: false,
+      };
+    }
+
+    const metadata = await runSandboxCommand(
+      sandbox,
+      "git rev-parse --short HEAD && git ls-files | wc -l",
+      SANDBOX_REPO_DIR,
+    );
+    applySandboxMetadata(context, metadata.stdout);
+    const languageFiles = parseSandboxLanguageManifestPayload(
+      await runSandboxCommand(
         sandbox,
-        buildGitCloneCommand(locator, input),
-      );
-      context.toolResults.push(buildGitCloneResult(clone, locator));
-
-      if (clone.exitCode !== 0) {
-        return buildSandboxScanResult(input, context);
-      }
-
-      const setup = await runSandboxCommand(sandbox, INSTALL_BUN_COMMAND);
-      context.toolResults.push(buildSetupResult(setup));
-
-      if (setup.exitCode !== 0) {
-        return buildSandboxScanResult(input, context);
-      }
-
-      const metadata = await runSandboxCommand(
-        sandbox,
-        "git rev-parse --short HEAD && git ls-files | wc -l",
+        withBunPath(SANDBOX_LANGUAGE_MANIFEST_COMMAND),
         SANDBOX_REPO_DIR,
-      );
-      applySandboxMetadata(context, metadata.stdout);
+      ),
+    );
+    const session = sandboxSessionFromContext(context, languageFiles ?? undefined);
 
-      const toolResults = [
-        buildFallowToolResult(
+    return {
+      session,
+      toolResults: context.toolResults,
+      tools: sandboxScanToolsForSession(session),
+      ready: true,
+    };
+  } catch (error) {
+    context.toolResults.push(buildSandboxFailureResult(error));
+  }
+
+  return {
+    session: sandboxSessionFromContext(context),
+    toolResults: context.toolResults,
+    tools: [],
+    ready: false,
+  };
+}
+
+export async function runSandboxScanTool(
+  sandboxId: string | undefined,
+  toolId: SandboxScanToolId,
+): Promise<ToolCheckResult> {
+  if (!sandboxId) {
+    return buildMissingSandboxToolResult(toolId);
+  }
+
+  try {
+    const sandbox = await Sandbox.get({ sandboxId });
+
+    switch (toolId) {
+      case "fallow":
+        return buildFallowToolResult(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 180s ${FALLOW_COMMAND}`),
             SANDBOX_REPO_DIR,
           ),
-        ),
-        buildMarkdownlintToolResult(
+        );
+      case "light-language-python":
+        return runSandboxLightLanguageTool(sandbox, "python");
+      case "light-language-ruby":
+        return runSandboxLightLanguageTool(sandbox, "ruby");
+      case "light-language-pascal":
+        return runSandboxLightLanguageTool(sandbox, "pascal");
+      case "light-language-java":
+        return runSandboxLightLanguageTool(sandbox, "java");
+      case "markdownlint":
+        return buildMarkdownlintToolResult(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 120s ${MARKDOWNLINT_COMMAND}`),
             SANDBOX_REPO_DIR,
           ),
-        ),
-        buildMarkdownLinkCheckToolResult(
+        );
+      case "markdown-link-check":
+        return buildMarkdownLinkCheckToolResult(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 180s ${MARKDOWN_LINK_CHECK_COMMAND}`),
             SANDBOX_REPO_DIR,
           ),
-        ),
-      ];
-      context.toolResults.push(...toolResults);
-    } finally {
-      await sandbox.stop({ blocking: false }).catch(() => undefined);
+        );
     }
+
+    const exhaustive: never = toolId;
+    return exhaustive;
   } catch (error) {
-    context.toolResults.push(buildSandboxFailureResult(error));
+    return buildSandboxToolFailureResult(toolId, error);
+  }
+}
+
+export async function finishSandboxScanSession(input: {
+  session: SandboxScanSession;
+  toolResults: ToolCheckResult[];
+  useAi?: boolean;
+}): Promise<RepoScanResult> {
+  const context = contextFromSandboxSession(input.session, input.toolResults);
+
+  try {
+    return await buildSandboxScanResult(
+      {
+        focus: input.session.focus,
+        repoUrl: input.session.sandbox?.repoUrl ?? input.session.repo,
+        revision: input.session.revision,
+        useAi: input.useAi,
+      },
+      context,
+    );
+  } finally {
+    await stopSandboxScanSession(input.session);
+  }
+}
+
+export async function stopSandboxScanSession(session: SandboxScanSession) {
+  await stopSandboxById(session.sandbox?.sandboxId);
+}
+
+export async function stopSandboxById(sandboxId: string | undefined) {
+  if (!sandboxId) {
+    return;
   }
 
-  return buildSandboxScanResult(input, context);
+  try {
+    const sandbox = await Sandbox.get({ sandboxId });
+    await sandbox.stop({ blocking: false });
+  } catch {
+    // Best-effort cleanup only. A sandbox timeout still bounds abandoned sessions.
+  }
+}
+
+async function runSandboxLightLanguageTool(sandbox: Sandbox, language: SourceLanguage) {
+  return parseSandboxLanguageSourcePayload(
+    await runSandboxCommand(
+      sandbox,
+      withBunPath(buildSandboxLanguageSourceCommand(language)),
+      SANDBOX_REPO_DIR,
+    ),
+    language,
+  );
+}
+
+function buildSandboxLanguageSourceCommand(language: SourceLanguage) {
+  return SANDBOX_LANGUAGE_SOURCE_COMMAND.replaceAll("__TARGET_LANGUAGE__", language);
+}
+
+function sandboxScanToolsForSession(session: SandboxScanSession): SandboxScanToolId[] {
+  const languages = session.languageFiles
+    ? LIGHT_LANGUAGE_ANALYSIS_LANGUAGES.filter(
+        (language) => (session.languageFiles?.[language] ?? 0) > 0,
+      )
+    : LIGHT_LANGUAGE_ANALYSIS_LANGUAGES;
+
+  return [
+    "fallow",
+    ...languages.map((language) => lightLanguageToolId(language)),
+    "markdownlint",
+    "markdown-link-check",
+  ];
 }
 
 export function normalizeRepoLocator(value: string): RepoLocator {
@@ -168,6 +589,119 @@ export function normalizeRepoLocator(value: string): RepoLocator {
   };
 }
 
+export function parseSandboxLanguageSourcePayload(
+  output: SandboxCommandOutput,
+  language?: SourceLanguage,
+): ToolCheckResult {
+  if (output.exitCode !== 0) {
+    return buildLanguageSourceErrorResult(
+      output,
+      "Sandbox language source collection failed before producing JSON.",
+      language,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output.stdout);
+  } catch {
+    return buildLanguageSourceErrorResult(
+      output,
+      "Sandbox language source collection returned invalid JSON.",
+      language,
+    );
+  }
+
+  if (!isSandboxLanguagePayload(parsed)) {
+    return buildLanguageSourceErrorResult(
+      output,
+      "Sandbox language source collection returned an unexpected payload.",
+      language,
+    );
+  }
+
+  return buildLightLanguageToolResult({
+    files: parsed.files,
+    skipped: parsed.skipped,
+    source: "sandbox",
+    language,
+  });
+}
+
+export function parseSandboxLanguageManifestPayload(
+  output: SandboxCommandOutput,
+): Partial<Record<SourceLanguage, number>> | null {
+  if (output.exitCode !== 0) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output.stdout);
+  } catch {
+    return null;
+  }
+
+  if (!isSandboxLanguageManifestPayload(parsed)) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    parsed.languages
+      .filter((entry) => LIGHT_LANGUAGE_ANALYSIS_LANGUAGES.includes(entry.language))
+      .map((entry) => [entry.language, entry.count]),
+  ) as Partial<Record<SourceLanguage, number>>;
+}
+
+function sandboxSessionFromContext(
+  context: ReviewContext,
+  languageFiles?: Partial<Record<SourceLanguage, number>>,
+): SandboxScanSession {
+  return {
+    repo: context.repo,
+    repoName: context.repoName,
+    focus: context.focus,
+    revision: context.sandbox?.revision,
+    scannedFiles: context.scannedFiles,
+    languageFiles,
+    sandbox: context.sandbox,
+  };
+}
+
+function contextFromSandboxSession(
+  session: SandboxScanSession,
+  toolResults: ToolCheckResult[],
+): ReviewContext {
+  const [owner] = session.repo.includes("/")
+    ? session.repo.split("/", 2)
+    : ["remote", session.repo];
+
+  return {
+    scope: "repo",
+    owner,
+    repoName: session.repoName,
+    repo: session.repo,
+    command: "scan",
+    focus: session.focus,
+    changedFiles: [],
+    docsFiles: [],
+    packageJson: null,
+    packageInfo: null,
+    readme: null,
+    envExample: null,
+    memoryInsights: [],
+    toolResults,
+    scannedFiles: session.scannedFiles,
+    sandbox:
+      session.sandbox ??
+      ({
+        repoUrl: session.repo,
+        cloneDepth: CLONE_DEPTH,
+        revision: session.revision,
+      } satisfies SandboxScanMetadata),
+  };
+}
+
 function createSandboxContext(input: RepoScanInput, locator: RepoLocator): ReviewContext {
   const [owner] = locator.repo.includes("/")
     ? locator.repo.split("/", 2)
@@ -193,6 +727,102 @@ function createSandboxContext(input: RepoScanInput, locator: RepoLocator): Revie
       cloneDepth: CLONE_DEPTH,
       revision: input.revision,
     },
+  };
+}
+
+function buildMissingSandboxToolResult(toolId: SandboxScanToolId): ToolCheckResult {
+  const meta = sandboxToolMeta(toolId);
+
+  return {
+    id: meta.id,
+    name: meta.name,
+    command: meta.command,
+    status: "error",
+    exitCode: null,
+    summary: `${meta.name} could not run because the sandbox session is missing a sandbox id.`,
+    issues: [
+      {
+        id: `${meta.id}-missing-sandbox`,
+        title: `${meta.name} could not run`,
+        severity: "medium",
+        category: "code-drift",
+        message: "Repo Deputy could not attach the analyzer to an active sandbox.",
+        evidence: ["The split scan session did not include a sandbox id."],
+        suggestedFix:
+          "Start a new scan session, then rerun the analyzer before the sandbox times out.",
+      },
+    ],
+  };
+}
+
+function buildSandboxToolFailureResult(
+  toolId: SandboxScanToolId,
+  error: unknown,
+): ToolCheckResult {
+  const meta = sandboxToolMeta(toolId);
+  const message = sandboxErrorMessage(error);
+
+  return {
+    id: meta.id,
+    name: meta.name,
+    command: meta.command,
+    status: "error",
+    exitCode: null,
+    summary: `${meta.name} could not run in the sandbox: ${message}`,
+    issues: [
+      {
+        id: `${meta.id}-sandbox-run-failed`,
+        title: `${meta.name} failed in the sandbox`,
+        severity: "medium",
+        category: "code-drift",
+        message,
+        evidence: [message],
+        suggestedFix:
+          "Rerun the scan. If it still fails, reduce repository size or check sandbox credentials.",
+      },
+    ],
+  };
+}
+
+function sandboxToolMeta(toolId: SandboxScanToolId) {
+  switch (toolId) {
+    case "fallow":
+      return {
+        id: "fallow",
+        name: "Fallow",
+        command: FALLOW_COMMAND,
+      };
+    case "light-language-python":
+      return lightLanguageToolMeta("python");
+    case "light-language-ruby":
+      return lightLanguageToolMeta("ruby");
+    case "light-language-pascal":
+      return lightLanguageToolMeta("pascal");
+    case "light-language-java":
+      return lightLanguageToolMeta("java");
+    case "markdownlint":
+      return {
+        id: "markdownlint",
+        name: "markdownlint-cli2",
+        command: MARKDOWNLINT_COMMAND,
+      };
+    case "markdown-link-check":
+      return {
+        id: "markdown-link-check",
+        name: "markdown-link-check",
+        command: MARKDOWN_LINK_CHECK_COMMAND,
+      };
+  }
+
+  const exhaustive: never = toolId;
+  return exhaustive;
+}
+
+function lightLanguageToolMeta(language: SourceLanguage) {
+  return {
+    id: lightLanguageToolId(language),
+    name: `${LIGHT_LANGUAGE_LABELS[language]} analysis`,
+    command: `repo-deputy light-language-analysis (in-process) --language ${language}`,
   };
 }
 
@@ -307,6 +937,48 @@ function buildSetupResult(output: SandboxCommandOutput): ToolCheckResult {
   };
 }
 
+function buildLanguageSourceErrorResult(
+  output: SandboxCommandOutput,
+  message: string,
+  language?: SourceLanguage,
+): ToolCheckResult {
+  const id = language ? lightLanguageToolId(language) : "light-language-analysis";
+  const name = language
+    ? `${LIGHT_LANGUAGE_LABELS[language]} analysis`
+    : "Lightweight language analysis";
+
+  return {
+    id,
+    name,
+    command: output.command,
+    status: "error",
+    exitCode: output.exitCode,
+    summary: message,
+    durationMs: output.durationMs,
+    issues: [
+      {
+        id: language
+          ? `light-language-${language}-source-collection-error`
+          : "light-language-source-collection-error",
+        title: `${name} could not collect source files`,
+        severity: "medium",
+        category: "code-drift",
+        message,
+        evidence: [
+          output.stderr ? `stderr: ${output.stderr.slice(0, 1_000)}` : "",
+          output.stdout ? `stdout: ${output.stdout.slice(0, 1_000)}` : "",
+        ].filter(Boolean),
+        suggestedFix: "Reduce the target source size before rerunning the sandbox scan.",
+      },
+    ],
+    output: {
+      stdout: output.stdout.slice(0, 4_000),
+      stderr: output.stderr.slice(0, 4_000),
+      truncated: output.stdout.length > 4_000 || output.stderr.length > 4_000,
+    },
+  };
+}
+
 function buildSandboxFailureResult(error: unknown): ToolCheckResult {
   const message = sandboxErrorMessage(error);
 
@@ -402,6 +1074,67 @@ function sandboxErrorMessage(error: unknown) {
   ].filter(Boolean);
 
   return [...new Set(parts)].join(" | ");
+}
+
+function isSandboxLanguagePayload(value: unknown): value is {
+  files: Array<{ path: string; content: string; size?: number }>;
+  skipped?: {
+    tooLarge?: number;
+    unsupported?: number;
+    totalLimit?: number;
+    unreadable?: number;
+  };
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as {
+    files?: unknown;
+    skipped?: unknown;
+  };
+  if (!Array.isArray(payload.files)) {
+    return false;
+  }
+
+  return payload.files.every((file) => {
+    if (!file || typeof file !== "object") {
+      return false;
+    }
+    const candidate = file as { path?: unknown; content?: unknown; size?: unknown };
+    return (
+      typeof candidate.path === "string" &&
+      typeof candidate.content === "string" &&
+      (candidate.size === undefined || typeof candidate.size === "number")
+    );
+  });
+}
+
+function isSandboxLanguageManifestPayload(value: unknown): value is {
+  languages: Array<{ language: SourceLanguage; count: number }>;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as { languages?: unknown };
+  if (!Array.isArray(payload.languages)) {
+    return false;
+  }
+
+  return payload.languages.every((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return false;
+    }
+
+    const candidate = entry as { language?: unknown; count?: unknown };
+    return (
+      typeof candidate.language === "string" &&
+      LIGHT_LANGUAGE_ANALYSIS_LANGUAGES.includes(candidate.language as SourceLanguage) &&
+      typeof candidate.count === "number" &&
+      Number.isFinite(candidate.count)
+    );
+  });
 }
 
 function safeJsonErrorMessage(value: unknown) {

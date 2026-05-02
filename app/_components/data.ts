@@ -12,6 +12,7 @@ export type Finding = {
   evidence?: string[];
   files?: string[];
   suggestedFix?: string;
+  confidence?: number;
   impact: string;
   effort: string;
 };
@@ -38,9 +39,13 @@ export type ApiToolResult = {
   issues: Array<{
     id: string;
     title: string;
+    severity?: "high" | "medium" | "low";
+    category?: string;
     path?: string;
     line?: number;
     message: string;
+    evidence?: string[];
+    suggestedFix?: string;
   }>;
 };
 

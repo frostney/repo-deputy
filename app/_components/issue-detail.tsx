@@ -11,6 +11,14 @@ type Props = {
 };
 
 export function IssueDetail({ issue, onClose, onPropose }: Props) {
+  const evidence = issue.evidence ?? [];
+  const files = issue.files?.length
+    ? issue.files
+    : issue.path
+        .split(" · ")
+        .map((path) => path.trim())
+        .filter(Boolean);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -65,25 +73,30 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 <CodeText>{issue.description}</CodeText>
               </p>
             </Section>
-            {issue.evidence?.length ? (
+            {evidence.length > 0 && (
               <Section title="Evidence">
-                <ul className="m-0 grid list-none gap-2 p-0 text-sm leading-[1.6] text-text-soft">
-                  {issue.evidence.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <span className="text-gold-warm">-</span>
-                      <span>
-                        <CodeText>{item}</CodeText>
-                      </span>
-                    </li>
+                <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
+                  {evidence.map((item) => (
+                    <div
+                      key={item}
+                      className="border-b border-line-soft px-3.5 py-2.5 last:border-b-0"
+                    >
+                      <CodeText>{item}</CodeText>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </Section>
-            ) : null}
+            )}
+            <Section title="Why it matters">
+              <p className="m-0 text-pretty text-sm leading-[1.6] text-text-soft">
+                {impactText(issue)}
+              </p>
+            </Section>
             <Section title="Suggested fix">
               <p className="m-0 text-pretty text-sm leading-[1.6] text-text-soft">
                 <CodeText>
                   {issue.suggestedFix ??
-                    "Review the affected files and align the implementation with the project contract."}
+                    "Review the finding evidence, then make the smallest focused change that removes the drift."}
                 </CodeText>
               </p>
             </Section>
@@ -95,6 +108,11 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 {issue.severity}
               </span>
             </AsideRow>
+            <AsideRow label="Confidence">
+              {typeof issue.confidence === "number"
+                ? `${Math.round(issue.confidence * 100)}%`
+                : "heuristic"}
+            </AsideRow>
             <AsideRow label="Impact">{issue.impact}</AsideRow>
             <AsideRow label="Effort">{issue.effort}</AsideRow>
             <div className="flex flex-col gap-1">
@@ -102,7 +120,7 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 Files affected
               </span>
               <div className="flex flex-col gap-1">
-                {(issue.files?.length ? issue.files : [issue.path]).map((f) => (
+                {files.map((f) => (
                   <div
                     key={f}
                     className="rounded bg-ink-2 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft"
@@ -165,6 +183,18 @@ function AsideRow({ label, children }: { label: string; children: React.ReactNod
       </span>
     </div>
   );
+}
+
+function impactText(issue: Finding) {
+  if (issue.severity === "high" || issue.severity === "critical") {
+    return "This finding is high enough risk to deserve human review before merging, especially because Repo Deputy found concrete evidence in the scanned repository.";
+  }
+
+  if (issue.category === "Duplication" || issue.category === "Complexity") {
+    return "This can make future generated changes harder to keep consistent because similar logic or deeply nested paths need to be updated together.";
+  }
+
+  return "This is a repo-truthfulness signal. Fixing it keeps the codebase easier to scan, maintain, and safely change.";
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {

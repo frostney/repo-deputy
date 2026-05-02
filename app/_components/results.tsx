@@ -29,7 +29,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
   const findings = scanResult ? (liveFindings ?? []) : FINDINGS;
   const categories = scanResult ? categoriesFromFindings(findings) : CATEGORIES;
   const overall = scanResult ? scoreFromConfidence(scanResult.mergeConfidence) : 76;
-  const source = sourceLabel(scanResult);
+  const source = "Sandbox";
   const criticalCount = findings.filter(
     (finding) => finding.severity === "critical" || finding.severity === "high",
   ).length;
@@ -420,27 +420,12 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
     evidence: finding.evidence,
     files: finding.files,
     suggestedFix: finding.suggestedFix,
+    confidence: finding.confidence,
     impact: finding.severity === "high" ? "high" : finding.severity,
     effort: "medium",
   };
 }
 
-function sourceLabel(scanResult: ScanResult | null) {
-  if (!scanResult) {
-    return "Sandbox";
-  }
-
-  if (
-    scanResult.repoUrl ||
-    scanResult.toolResults.some(
-      (tool) => tool.id === "sandbox" || tool.id === "git-clone",
-    )
-  ) {
-    return "Sandbox";
-  }
-
-  return "Local";
-}
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   return TABS.filter((tab) => tab !== "All").map((key) => {
     const issues = findings.filter((finding) => finding.category === key);

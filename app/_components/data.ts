@@ -26,7 +26,7 @@ export type ApiFinding = {
   evidence: string[];
   files: string[];
   suggestedFix: string;
-  confidence?: number;
+  confidence: number;
 };
 
 export type ApiToolResult = {
@@ -58,6 +58,22 @@ export type ScanResult = {
   findings: ApiFinding[];
   markdown: string;
   toolResults: ApiToolResult[];
+};
+
+export type ScanStats = {
+  available: boolean;
+  storage: "mubit" | "unconfigured";
+  totalRuns: number;
+  totalFilesScanned: number;
+  repositoryCount: number;
+  lastRunAt: string | null;
+  repositories: Array<{
+    repo: string;
+    repoUrl?: string;
+    runs: number;
+    filesScanned: number;
+    lastRunAt: string;
+  }>;
 };
 
 export const FINDINGS: Finding[] = [
@@ -154,82 +170,6 @@ export const CATEGORIES: CategoryRow[] = [
   { key: "Cycles", icon: "circular", score: 81, issues: 3, tone: "warn" },
   { key: "Complexity", icon: "complexity", score: 76, issues: 19, tone: "warn" },
   { key: "Docs", icon: "docs", score: 88, issues: 6, tone: "good" },
-];
-
-export type FixOption = {
-  id: string;
-  title: string;
-  category: string;
-  severity: Severity;
-  files: number;
-  lines: string;
-  impact: string;
-};
-
-export const FIX_OPTIONS: FixOption[] = [
-  {
-    id: "f1",
-    title: "Replace `internal/server` import with public type contract",
-    category: "Drift",
-    severity: "critical",
-    files: 1,
-    lines: "+4 −2",
-    impact: "Resolves 3 boundary violations",
-  },
-  {
-    id: "f2",
-    title: "Consolidate retry helpers into `@next/utils/retry`",
-    category: "Duplication",
-    severity: "high",
-    files: 4,
-    lines: "+38 −146",
-    impact: "−108 LOC · resolves 8 warnings",
-  },
-  {
-    id: "f3",
-    title: "Break circular dep: `telemetry` ↔ `log`",
-    category: "Cycles",
-    severity: "high",
-    files: 2,
-    lines: "+12 −7",
-    impact: "Enables tree-shaking",
-  },
-  {
-    id: "f4",
-    title: "Refactor `buildManifest()` into 3 helpers",
-    category: "Complexity",
-    severity: "medium",
-    files: 1,
-    lines: "+62 −58",
-    impact: "Cognitive 38 → 11",
-  },
-  {
-    id: "f5",
-    title: "Update README to remove `next export` references",
-    category: "Docs",
-    severity: "medium",
-    files: 2,
-    lines: "+8 −12",
-    impact: "Doc accuracy +6%",
-  },
-  {
-    id: "f6",
-    title: "Unify slug parsing into `parseSlug()` canonical impl",
-    category: "Duplication",
-    severity: "low",
-    files: 1,
-    lines: "+4 −22",
-    impact: "Removes parallel impl",
-  },
-  {
-    id: "f7",
-    title: "Add JSDoc to 14 public exports in `/server`",
-    category: "Docs",
-    severity: "low",
-    files: 1,
-    lines: "+58 −0",
-    impact: "Public API coverage 86% → 100%",
-  },
 ];
 
 export type ScanCheck = {

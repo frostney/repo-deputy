@@ -1,46 +1,66 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { FIX_OPTIONS } from "./data";
+import { useEffect, useMemo, useState } from "react";
+import type { ScanResult } from "./data";
 import { CodeText, Icon } from "./icons";
+import {
+  buildFixOptions,
+  buildPullRequestDraft,
+  defaultPrBranch,
+  defaultPrTitle,
+  defaultSelectedFixIds,
+  highestSeverity,
+  type FixOption,
+  type PullRequestDraft,
+} from "./pr-data";
 
 type Props = {
   repo: string;
+  scanResult: ScanResult | null;
   preselected: string[] | null;
   onBack: () => void;
-  onSubmit: (pr: { count: number; files: number; branch: string; title: string }) => void;
+  onSubmit: (pr: PullRequestDraft) => void;
 };
 
-export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
-  const initial = useMemo(() => {
-    const defaults = ["f1", "f2", "f3", "f5"];
-    const ids = preselected && preselected.length > 0 ? preselected : defaults;
-    return Object.fromEntries(FIX_OPTIONS.map((f) => [f.id, ids.includes(f.id)]));
-  }, [preselected]);
-
-  const [checked, setChecked] = useState<Record<string, boolean>>(initial);
-  const [title, setTitle] = useState(
-    "chore: deputize · clean up drift, dupes, and stale docs",
+export function PRCreate({ repo, scanResult, preselected, onBack, onSubmit }: Props) {
+  const fixOptions = useMemo(() => buildFixOptions(scanResult), [scanResult]);
+  const initial = useMemo(
+    () => checkedFromPreselection(fixOptions, preselected),
+    [fixOptions, preselected],
   );
-  const [branch, setBranch] = useState("repo-deputy/audit-00482");
+
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [title, setTitle] = useState("");
+  const [titleEdited, setTitleEdited] = useState(false);
+  const [branch, setBranch] = useState("");
+
+  useEffect(() => {
+    setChecked(initial);
+    setTitle(defaultPrTitle(fixOptions.filter((option) => initial[option.id])));
+    setTitleEdited(false);
+    setBranch(defaultPrBranch(repo, scanResult));
+  }, [fixOptions, initial, repo, scanResult]);
 
   const toggle = (id: string) => setChecked((c) => ({ ...c, [id]: !c[id] }));
-  const allOn = FIX_OPTIONS.every((f) => checked[f.id]);
+  const allOn = fixOptions.length > 0 && fixOptions.every((f) => checked[f.id]);
   const toggleAll = () => {
     const v = !allOn;
-    setChecked(Object.fromEntries(FIX_OPTIONS.map((f) => [f.id, v])));
+    setChecked(Object.fromEntries(fixOptions.map((f) => [f.id, v])));
   };
 
-  const selected = FIX_OPTIONS.filter((f) => checked[f.id]);
-  const totalFiles = selected.reduce((s, f) => s + f.files, 0);
-  const linesAdded = selected.reduce((s, f) => {
-    const m = f.lines.match(/\+(\d+)/);
-    return s + (m ? Number.parseInt(m[1], 10) : 0);
-  }, 0);
-  const linesRemoved = selected.reduce((s, f) => {
-    const m = f.lines.match(/[−-](\d+)/);
-    return s + (m ? Number.parseInt(m[1], 10) : 0);
-  }, 0);
+  const selected = useMemo(
+    () => fixOptions.filter((f) => checked[f.id]),
+    [fixOptions, checked],
+  );
+  const selectedFileCount = new Set(selected.flatMap((option) => option.files)).size;
+  const evidenceCount = selected.reduce((sum, option) => sum + option.evidenceCount, 0);
+  const selectedHighestSeverity = highestSeverity(selected);
+
+  useEffect(() => {
+    if (!titleEdited) {
+      setTitle(defaultPrTitle(selected));
+    }
+  }, [selected, titleEdited]);
 
   return (
     <main className="flex flex-1 flex-col py-10 pb-24">
@@ -67,8 +87,8 @@ export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
           Deputize a <em className="italic text-gold">pull request</em>
         </h1>
         <p className="mb-6 text-[15px] text-text-soft">
-          Pick which fixes to bundle. Repo Deputy will open a PR with the selected
-          changes, complete with explanation, diffs, and test runs.
+          Pick which current scan findings to bundle into a PR request. The draft below is
+          built from this scan's findings, files, and evidence.
         </p>
 
         <div className="grid gap-7 lg:grid-cols-[1fr_360px]">
@@ -76,7 +96,7 @@ export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
             <div className="flex items-center justify-between border-b border-line bg-ink-3 px-4 py-3.5 text-[13px]">
               <div>
                 <strong className="font-medium text-text">{selected.length}</strong> of{" "}
-                {FIX_OPTIONS.length} fixes selected
+                {fixOptions.length} findings selected
               </div>
               <button
                 type="button"
@@ -86,7 +106,7 @@ export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
                 {allOn ? "Deselect all" : "Select all"}
               </button>
             </div>
-            {FIX_OPTIONS.map((f) => (
+            {fixOptions.map((f) => (
               <button
                 type="button"
                 key={f.id}
@@ -111,31 +131,51 @@ export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
                     <span>{f.category}</span>
                     <span>·</span>
                     <span>
-                      {f.files} {f.files === 1 ? "file" : "files"}
+                      {f.fileCount} {f.fileCount === 1 ? "file" : "files"}
                     </span>
                     <span>·</span>
-                    <span>{f.lines}</span>
+                    <span>
+                      {f.evidenceCount}{" "}
+                      {f.evidenceCount === 1 ? "evidence item" : "evidence items"}
+                    </span>
                   </div>
                 </div>
                 <div className="whitespace-nowrap rounded bg-sage/10 px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-sage-warm">
-                  {f.impact}
+                  {confidenceLabel(f)}
                 </div>
               </button>
             ))}
+            {fixOptions.length === 0 && (
+              <div className="px-5 py-8 text-sm text-text-soft">
+                No current scan findings are available for a PR request.
+              </div>
+            )}
           </div>
 
           <div className="sticky top-[92px] flex flex-col gap-3.5 self-start rounded-[10px] border border-line bg-ink-2 p-5">
             <h4 className="feature-soft m-0 font-[family-name:var(--font-serif)] text-[17px] font-medium">
-              Pull request preview
+              PR request
             </h4>
             <SummaryRow label="Fixes" value={`${selected.length}`} />
-            <SummaryRow label="Files changed" value={`${totalFiles}`} />
-            <SummaryRow label="Lines added" value={`+${linesAdded}`} tone="green" />
-            <SummaryRow label="Lines removed" value={`−${linesRemoved}`} tone="red" />
-            <SummaryRow label="Score after" value="B+ → A−" tone="green" />
+            <SummaryRow label="Files referenced" value={`${selectedFileCount}`} />
+            <SummaryRow label="Evidence items" value={`${evidenceCount}`} />
+            <SummaryRow
+              label="Highest severity"
+              value={selectedHighestSeverity ?? "none"}
+              tone={
+                selectedHighestSeverity === "critical" ||
+                selectedHighestSeverity === "high"
+                  ? "red"
+                  : undefined
+              }
+            />
+            <SummaryRow
+              label="Scan verdict"
+              value={scanResult?.mergeConfidence ?? "unavailable"}
+            />
 
             <div className="flex flex-col gap-2.5 border-t border-line-soft pt-3.5">
-              <Field label="Branch">
+              <Field label="Proposed branch">
                 <input
                   className="w-full rounded-md border border-line bg-ink-3 px-2.5 py-2 font-[family-name:var(--font-mono)] text-xs text-text outline-none focus:border-gold"
                   value={branch}
@@ -146,21 +186,12 @@ export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
                 <input
                   className="w-full rounded-md border border-line bg-ink-3 px-2.5 py-2 font-[family-name:var(--font-mono)] text-xs text-text outline-none focus:border-gold"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitleEdited(true);
+                    setTitle(e.target.value);
+                  }}
                 />
               </Field>
-              <Field label="Reviewers">
-                <input
-                  className="w-full rounded-md border border-line bg-ink-3 px-2.5 py-2 font-[family-name:var(--font-mono)] text-xs text-text outline-none focus:border-gold"
-                  defaultValue="@maintainers"
-                />
-              </Field>
-              <label className="mt-1 flex items-center gap-2 text-xs text-text-soft">
-                <input type="checkbox" defaultChecked /> Run CI before opening
-              </label>
-              <label className="flex items-center gap-2 text-xs text-text-soft">
-                <input type="checkbox" defaultChecked /> Mark as draft
-              </label>
             </div>
 
             <button
@@ -168,15 +199,18 @@ export function PRCreate({ repo, preselected, onBack, onSubmit }: Props) {
               className="btn btn-primary btn-lg mt-1.5 w-full"
               disabled={selected.length === 0}
               onClick={() =>
-                onSubmit({
-                  count: selected.length,
-                  files: totalFiles,
-                  branch,
-                  title,
-                })
+                onSubmit(
+                  buildPullRequestDraft({
+                    options: fixOptions,
+                    selectedIds: selected.map((option) => option.id),
+                    scanResult,
+                    branch,
+                    title,
+                  }),
+                )
               }
             >
-              <Icon name="git-pull" size={14} /> Open pull request
+              <Icon name="git-pull" size={14} /> Prepare PR request
             </button>
           </div>
         </div>
@@ -221,4 +255,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </div>
   );
+}
+
+function checkedFromPreselection(options: FixOption[], preselected: string[] | null) {
+  const validIds = new Set(options.map((option) => option.id));
+  const requested = preselected?.filter((id) => validIds.has(id)) ?? [];
+  const selectedIds = requested.length ? requested : defaultSelectedFixIds(options);
+  const selected = new Set(selectedIds);
+
+  return Object.fromEntries(
+    options.map((option) => [option.id, selected.has(option.id)]),
+  );
+}
+
+function confidenceLabel(option: FixOption) {
+  if (option.confidence === null) {
+    return `${option.evidenceCount} evidence`;
+  }
+
+  return `${Math.round(option.confidence * 100)}% confidence`;
 }

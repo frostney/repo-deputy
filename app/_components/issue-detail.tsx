@@ -104,13 +104,16 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
 
           <aside className="flex flex-col gap-4 border-l border-line pl-6">
             <AsideRow label="Severity">
-              <span className="uppercase text-oxblood-soft">{issue.severity}</span>
+              <span className={`uppercase ${severityTone(issue.severity)}`}>
+                {issue.severity}
+              </span>
             </AsideRow>
             <AsideRow label="Confidence">
               {typeof issue.confidence === "number"
                 ? `${Math.round(issue.confidence * 100)}%`
                 : "heuristic"}
             </AsideRow>
+            <AsideRow label="Impact">{issue.impact}</AsideRow>
             <AsideRow label="Effort">{issue.effort}</AsideRow>
             <div className="flex flex-col gap-1">
               <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
@@ -200,4 +203,17 @@ function Kbd({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function severityTone(severity: Finding["severity"]) {
+  if (severity === "critical") {
+    return "text-oxblood-soft";
+  }
+  if (severity === "high") {
+    return "text-rust";
+  }
+  if (severity === "medium") {
+    return "text-gold-warm";
+  }
+  return "text-slate-western";
 }

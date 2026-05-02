@@ -1,9 +1,73 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const title = "Repo Deputy";
+const description =
+  "A whole-repository drift scanner that keeps AI-generated code changes honest across app and MCP workflows.";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://repo-deputy.vercel.app";
+
 export const metadata: Metadata = {
-  title: "Repo Deputy",
-  description: "A whole-repository drift scanner for app and MCP workflows.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: title,
+    template: `%s · ${title}`,
+  },
+  description,
+  applicationName: title,
+  keywords: [
+    "Repo Deputy",
+    "repository drift scanner",
+    "AI code review",
+    "MCP server",
+    "Next.js repository scanner",
+  ],
+  authors: [{ name: "Repo Deputy" }],
+  creator: "Repo Deputy",
+  publisher: "Repo Deputy",
+  alternates: {
+    canonical: "/",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  icons: {
+    icon: [{ url: "/favicon.ico", sizes: "any" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: title,
+    title,
+    description,
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Repo Deputy whole-repository drift scanner",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [
+      {
+        url: "/twitter-image",
+        alt: "Repo Deputy whole-repository drift scanner",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

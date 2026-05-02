@@ -45,6 +45,14 @@ The final report response includes:
 - `memoryUsed`
 - `toolResults`
 
+### `app/api/stats/route.ts`
+
+Returns scan counters for the dashboard: completed scan runs, unique
+repositories scanned, total scanned files, and recent repository totals. In
+production these counters are backed by the existing Mubit integration. When
+Mubit is not configured, stats are unavailable and Repo Deputy does not write a
+local fallback counter.
+
 ### `lib/scan/`
 
 Orchestrates sandbox scans:

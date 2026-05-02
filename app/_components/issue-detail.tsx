@@ -65,77 +65,44 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 <CodeText>{issue.description}</CodeText>
               </p>
             </Section>
-            <Section title="Why it matters">
-              <p className="m-0 text-pretty text-sm leading-[1.6] text-text-soft">
-                Architectural boundaries exist so client code can be bundled, tree-shaken,
-                and shipped without dragging server-only modules along for the ride.
-                Reaching across this boundary{" "}
-                <strong className="font-medium text-text">
-                  increases bundle size by ~14kb
-                </strong>
-                , breaks the static analysis that powers route splitting, and creates a
-                load-order trap where edge runtimes will fail at cold start.
-              </p>
-            </Section>
+            {issue.evidence?.length ? (
+              <Section title="Evidence">
+                <ul className="m-0 grid list-none gap-2 p-0 text-sm leading-[1.6] text-text-soft">
+                  {issue.evidence.map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <span className="text-gold-warm">-</span>
+                      <span>
+                        <CodeText>{item}</CodeText>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            ) : null}
             <Section title="Suggested fix">
-              <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
-                <div className="flex justify-between border-b border-line bg-ink-3 px-3.5 py-2 text-[11px] text-text-mute">
-                  <span>packages/next/src/client/components/router-reducer.ts</span>
-                  <span>2 changes</span>
-                </div>
-                <pre className="m-0 overflow-x-auto whitespace-pre p-3.5">
-                  <span className="block bg-oxblood/15 text-[#F2C9C5]">
-                    <Gutter>42</Gutter>
-                    {
-                      "import { internalRouteCache } from '../../server/internal/route-cache'"
-                    }
-                  </span>
-                  {"\n"}
-                  <span className="block bg-sage/15 text-[#C9DCB7]">
-                    <Gutter>42</Gutter>
-                    {"import type { RouteCacheSnapshot } from '../router-types'"}
-                  </span>
-                  {"\n"}
-                  <span className="block">
-                    <Gutter>43</Gutter>
-                  </span>
-                  {"\n"}
-                  <span className="block bg-oxblood/15 text-[#F2C9C5]">
-                    <Gutter>87</Gutter>
-                    {"  const cache = internalRouteCache.get(key)"}
-                  </span>
-                  {"\n"}
-                  <span className="block bg-sage/15 text-[#C9DCB7]">
-                    <Gutter>87</Gutter>
-                    {"  const cache = ctx.routeCache.get(key) as RouteCacheSnapshot"}
-                  </span>
-                </pre>
-              </div>
-            </Section>
-            <Section title="Related findings">
               <p className="m-0 text-pretty text-sm leading-[1.6] text-text-soft">
-                Two other modules import from{" "}
-                <code className="code-pill">server/internal/*</code>. Resolving #F1
-                unlocks the same fix for #F8 and #F23.
+                <CodeText>
+                  {issue.suggestedFix ??
+                    "Review the affected files and align the implementation with the project contract."}
+                </CodeText>
               </p>
             </Section>
           </div>
 
           <aside className="flex flex-col gap-4 border-l border-line pl-6">
             <AsideRow label="Severity">
-              <span className="uppercase text-oxblood-soft">Critical</span>
+              <span className={`uppercase ${severityTone(issue.severity)}`}>
+                {issue.severity}
+              </span>
             </AsideRow>
-            <AsideRow label="Confidence">96%</AsideRow>
-            <AsideRow label="Effort">~15 min</AsideRow>
-            <AsideRow label="Auto-fixable">
-              <span className="text-sage-warm">Yes</span>
-            </AsideRow>
+            <AsideRow label="Impact">{issue.impact}</AsideRow>
+            <AsideRow label="Effort">{issue.effort}</AsideRow>
             <div className="flex flex-col gap-1">
               <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
                 Files affected
               </span>
               <div className="flex flex-col gap-1">
-                {["router-reducer.ts", "router-types.ts", "route-cache.ts"].map((f) => (
+                {(issue.files?.length ? issue.files : [issue.path]).map((f) => (
                   <div
                     key={f}
                     className="rounded bg-ink-2 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft"
@@ -145,8 +112,6 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 ))}
               </div>
             </div>
-            <AsideRow label="First detected">3 days ago</AsideRow>
-            <AsideRow label="Introduced by">PR #58231</AsideRow>
           </aside>
         </div>
 
@@ -202,18 +167,23 @@ function AsideRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function Gutter({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-      {children}
-    </span>
-  );
-}
-
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-block rounded border border-line bg-ink-3 px-1.5 py-0.5 font-[family-name:var(--font-mono)] text-[10px] text-text-mute">
       {children}
     </span>
   );
+}
+
+function severityTone(severity: Finding["severity"]) {
+  if (severity === "critical") {
+    return "text-oxblood-soft";
+  }
+  if (severity === "high") {
+    return "text-rust";
+  }
+  if (severity === "medium") {
+    return "text-gold-warm";
+  }
+  return "text-slate-western";
 }

@@ -34,9 +34,13 @@ export type ApiToolResult = {
   issues: Array<{
     id: string;
     title: string;
+    severity?: "high" | "medium" | "low";
+    category?: string;
     path?: string;
     line?: number;
     message: string;
+    evidence?: string[];
+    suggestedFix?: string;
   }>;
 };
 

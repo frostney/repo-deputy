@@ -116,18 +116,13 @@ export type ReviewContext = {
   toolResults: ToolCheckResult[];
   lightLanguageSkipped?: LightLanguageSkipped;
   sandbox?: SandboxScanMetadata;
-  runExternalTools?: boolean;
 };
 
 export type RepoScanInput = {
   focus: ReviewFocus;
-  rootPath?: string;
-  repoUrl?: string;
+  repoUrl: string;
   revision?: string;
   useAi?: boolean;
-  useMemory?: boolean;
-  useSandbox?: boolean;
-  runExternalTools?: boolean;
 };
 
 export type RepoScanResult = {

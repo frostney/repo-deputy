@@ -7,7 +7,7 @@ The current scope is a whole-repository drift scanner with two surfaces:
 - A Next.js App Router dashboard at `/`
 - A local stdio MCP server for agent workflows
 
-It scans the checked-out repository for docs drift, stale setup commands, env
+It scans public Git repositories in Vercel Sandbox for docs drift, stale setup commands, env
 documentation gaps, duplicate generated helpers, dependency drift, route naming
 drift, TypeScript/JavaScript health through Fallow, and lightweight
 Python/Ruby/Object Pascal/Java complexity and duplication signals.
@@ -21,21 +21,20 @@ bun run dev
 
 Open `http://localhost:3000` for the app dashboard.
 
-Fetch scan JSON directly:
+Start a split sandbox scan session:
 
 ```bash
-curl "http://localhost:3000/api/scan?focus=full&ai=false"
+curl -X POST http://localhost:3000/api/scan/session \
+  -H "content-type: application/json" \
+  -d '{"repo":"vercel/next.js","focus":"full","ai":false}'
 ```
 
-Scan a public GitHub repository in Vercel Sandbox:
-
-```bash
-curl "http://localhost:3000/api/scan?repo=vercel/next.js&focus=full&ai=false"
-```
+Run `/api/scan/tool` phases with the returned session, in parallel if desired,
+then call `/api/scan/report` with the accumulated `toolResults`.
 
 Sandbox scans use a depth-1 git checkout and run Fallow, lightweight
 Python/Ruby/Object Pascal/Java analysis, markdownlint, and markdown-link-check.
-Local path scans do not need Sandbox credentials.
+Filesystem/local path scans are not part of the app/API/MCP product surface.
 
 ## MCP
 
@@ -45,7 +44,7 @@ Start the local MCP server:
 bun run mcp
 ```
 
-The main tool is `repo_deputy_scan_repo`, which scans a local repository path and
+The main tool is `repo_deputy_scan_repo`, which scans a public repository in Vercel Sandbox and
 returns findings plus markdown.
 
 See [`docs/mcp.md`](./docs/mcp.md) for client configuration and all tools.
@@ -67,5 +66,6 @@ Detailed docs live in [`docs/`](./docs/README.md).
 
 ## Environment
 
-Vercel AI Gateway and Mubit are optional. Missing keys do not break local scans.
+Vercel AI Gateway and Mubit are optional. Sandbox credentials are required for
+remote repository scans.
 See [`.env.example`](./.env.example).

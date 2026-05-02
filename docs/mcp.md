@@ -36,45 +36,29 @@ Replace `/absolute/path/to/repo-deputy` with this repository path.
 
 ### `repo_deputy_scan_repo`
 
-Scans a local repository path or a public git repository and returns findings
-plus markdown.
+Scans a public git repository in Vercel Sandbox and returns findings plus
+markdown.
 
 Input:
 
 ```json
 {
-  "rootPath": "/absolute/path/to/target-repo",
-  "focus": "full",
-  "useAi": false,
-  "useMemory": false
-}
-```
-
-Remote sandbox input:
-
-```json
-{
   "repoUrl": "vercel/next.js",
   "focus": "full",
-  "useAi": false,
-  "useMemory": false
+  "useAi": false
 }
 ```
 
 Notes:
 
-- `rootPath` defaults to the MCP server working directory.
-- `repoUrl` accepts a public git URL or GitHub `owner/repo` shorthand. When set,
-  Repo Deputy uses Vercel Sandbox with `depth: 1` instead of `rootPath`.
+- `repoUrl` accepts a public git URL or GitHub `owner/repo` shorthand.
+- Repo Deputy uses Vercel Sandbox with a depth-1 git checkout.
 - Sandbox scans run Fallow, lightweight Python/Ruby/Object Pascal/Java analysis,
   markdownlint, and markdown-link-check and return parsed `toolResults`.
 - `focus` can be `docs`, `code`, or `full`.
-- `useAi` defaults to `false` so local MCP calls are deterministic by default.
-- `useMemory` defaults to `false` so MCP scans do not write Mubit memory unless
-  explicitly requested.
-- `runExternalTools` can be set to `true` for local `rootPath` scans to run the
-  local Fallow adapter. The lightweight Python/Ruby/Object Pascal/Java analyzer
-  is in-process and does not need those language runtimes.
+- `useAi` defaults to `false` so MCP calls are deterministic by default.
+- Local filesystem scans are not part of this MCP tool; add a separate CLI or
+  skill if that workflow is needed later.
 
 ### `repo_deputy_check_drift`
 
@@ -121,13 +105,11 @@ This is kept for migration and demos; it is not the primary product surface.
 
 ## Boundaries
 
-The MCP server can read local repository files through `repo_deputy_scan_repo`.
-When `repoUrl` is supplied, it can also start a single Vercel Sandbox for a
-public shallow git checkout. It does not provide remote repository hosting,
-multi-tenant access, or GitHub App behavior.
+The MCP server can start a single Vercel Sandbox for a public shallow git
+checkout. It does not read local repository paths, provide remote repository
+hosting, multi-tenant access, or GitHub App behavior.
 
 External calls are opt-in:
 
 - AI Gateway is used only when `useAi` is true and `AI_GATEWAY_API_KEY` exists.
-- Mubit memory is used only when `useMemory` is true and Mubit env vars are
-  configured.
+- Mubit memory is not used by the sandbox scan tool.

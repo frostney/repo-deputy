@@ -13,6 +13,7 @@ import type {
   RepoScanInput,
   RepoScanResult,
   ReviewContext,
+  SandboxScanMetadata,
   ToolCheckResult,
 } from "@/lib/review/types";
 import { toolIssuesToFindings } from "@/lib/review/tool-results";
@@ -31,12 +32,37 @@ type RepoLocator = {
   repoUrl: string;
 };
 
+export const SANDBOX_SCAN_TOOL_IDS = [
+  "fallow",
+  "light-language-analysis",
+  "markdownlint",
+  "markdown-link-check",
+] as const;
+
+export type SandboxScanToolId = (typeof SANDBOX_SCAN_TOOL_IDS)[number];
+
+export type SandboxScanSession = {
+  repo: string;
+  repoName?: string;
+  repoUrl: string;
+  focus: RepoScanInput["focus"];
+  revision?: string;
+  scannedFiles?: number;
+  sandbox?: SandboxScanMetadata;
+};
+
+export type SandboxScanSessionResult = {
+  session: SandboxScanSession;
+  toolResults: ToolCheckResult[];
+  ready: boolean;
+};
+
 const CLONE_DEPTH = 1;
 const SANDBOX_TIMEOUT_MS = 10 * 60 * 1000;
 const SANDBOX_REPO_DIR = "/vercel/sandbox/repo";
-const MAX_SANDBOX_LANGUAGE_FILES = 250;
-const MAX_SANDBOX_LANGUAGE_FILE_BYTES = 100_000;
-const MAX_SANDBOX_LANGUAGE_TOTAL_BYTES = 2_000_000;
+const MAX_SANDBOX_LANGUAGE_FILES = 2_000;
+const MAX_SANDBOX_LANGUAGE_FILE_BYTES = 500_000;
+const MAX_SANDBOX_LANGUAGE_TOTAL_BYTES = 25_000_000;
 
 const INSTALL_BUN_COMMAND = [
   "if command -v bun >/dev/null 2>&1; then bun --version; exit 0; fi",
@@ -162,6 +188,29 @@ timeout 120s bun --silent /tmp/repo-deputy-language-source.ts`;
 export async function runSandboxRepoScan(
   input: RepoScanInput & { repoUrl: string },
 ): Promise<RepoScanResult> {
+  const sessionResult = await createSandboxScanSession(input);
+  const toolResults = [...sessionResult.toolResults];
+
+  if (sessionResult.ready) {
+    toolResults.push(
+      ...(await Promise.all(
+        SANDBOX_SCAN_TOOL_IDS.map((toolId) =>
+          runSandboxScanTool(sessionResult.session, toolId),
+        ),
+      )),
+    );
+  }
+
+  return finishSandboxScanSession({
+    session: sessionResult.session,
+    toolResults,
+    useAi: input.useAi,
+  });
+}
+
+export async function createSandboxScanSession(
+  input: RepoScanInput & { repoUrl: string },
+): Promise<SandboxScanSessionResult> {
   const locator = normalizeRepoLocator(input.repoUrl);
   const context = createSandboxContext(input, locator);
 
@@ -179,70 +228,139 @@ export async function runSandboxRepoScan(
       sandboxId: sandbox.sandboxId,
     };
 
-    try {
-      const clone = await runSandboxCommand(
-        sandbox,
-        buildGitCloneCommand(locator, input),
-      );
-      context.toolResults.push(buildGitCloneResult(clone, locator));
+    const clone = await runSandboxCommand(sandbox, buildGitCloneCommand(locator, input));
+    context.toolResults.push(buildGitCloneResult(clone, locator));
 
-      if (clone.exitCode !== 0) {
-        return buildSandboxScanResult(input, context);
-      }
+    if (clone.exitCode !== 0) {
+      return {
+        session: sandboxSessionFromContext(context),
+        toolResults: context.toolResults,
+        ready: false,
+      };
+    }
 
-      const setup = await runSandboxCommand(sandbox, INSTALL_BUN_COMMAND);
-      context.toolResults.push(buildSetupResult(setup));
+    const setup = await runSandboxCommand(sandbox, INSTALL_BUN_COMMAND);
+    context.toolResults.push(buildSetupResult(setup));
 
-      if (setup.exitCode !== 0) {
-        return buildSandboxScanResult(input, context);
-      }
+    if (setup.exitCode !== 0) {
+      return {
+        session: sandboxSessionFromContext(context),
+        toolResults: context.toolResults,
+        ready: false,
+      };
+    }
 
-      const metadata = await runSandboxCommand(
-        sandbox,
-        "git rev-parse --short HEAD && git ls-files | wc -l",
-        SANDBOX_REPO_DIR,
-      );
-      applySandboxMetadata(context, metadata.stdout);
+    const metadata = await runSandboxCommand(
+      sandbox,
+      "git rev-parse --short HEAD && git ls-files | wc -l",
+      SANDBOX_REPO_DIR,
+    );
+    applySandboxMetadata(context, metadata.stdout);
 
-      const toolResults = [
-        buildFallowToolResult(
+    return {
+      session: sandboxSessionFromContext(context),
+      toolResults: context.toolResults,
+      ready: true,
+    };
+  } catch (error) {
+    context.toolResults.push(buildSandboxFailureResult(error));
+  }
+
+  return {
+    session: sandboxSessionFromContext(context),
+    toolResults: context.toolResults,
+    ready: false,
+  };
+}
+
+export async function runSandboxScanTool(
+  session: SandboxScanSession,
+  toolId: SandboxScanToolId,
+): Promise<ToolCheckResult> {
+  const sandboxId = session.sandbox?.sandboxId;
+  if (!sandboxId) {
+    return buildMissingSandboxToolResult(toolId);
+  }
+
+  try {
+    const sandbox = await Sandbox.get({ sandboxId });
+
+    switch (toolId) {
+      case "fallow":
+        return buildFallowToolResult(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 180s ${FALLOW_COMMAND}`),
             SANDBOX_REPO_DIR,
           ),
-        ),
-        parseSandboxLanguageSourcePayload(
+        );
+      case "light-language-analysis":
+        return parseSandboxLanguageSourcePayload(
           await runSandboxCommand(
             sandbox,
             withBunPath(SANDBOX_LANGUAGE_SOURCE_COMMAND),
             SANDBOX_REPO_DIR,
           ),
-        ),
-        buildMarkdownlintToolResult(
+        );
+      case "markdownlint":
+        return buildMarkdownlintToolResult(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 120s ${MARKDOWNLINT_COMMAND}`),
             SANDBOX_REPO_DIR,
           ),
-        ),
-        buildMarkdownLinkCheckToolResult(
+        );
+      case "markdown-link-check":
+        return buildMarkdownLinkCheckToolResult(
           await runSandboxCommand(
             sandbox,
             withBunPath(`timeout 180s ${MARKDOWN_LINK_CHECK_COMMAND}`),
             SANDBOX_REPO_DIR,
           ),
-        ),
-      ];
-      context.toolResults.push(...toolResults);
-    } finally {
-      await sandbox.stop({ blocking: false }).catch(() => undefined);
+        );
     }
+
+    const exhaustive: never = toolId;
+    return exhaustive;
   } catch (error) {
-    context.toolResults.push(buildSandboxFailureResult(error));
+    return buildSandboxToolFailureResult(toolId, error);
+  }
+}
+
+export async function finishSandboxScanSession(input: {
+  session: SandboxScanSession;
+  toolResults: ToolCheckResult[];
+  useAi?: boolean;
+}): Promise<RepoScanResult> {
+  const context = contextFromSandboxSession(input.session, input.toolResults);
+
+  try {
+    return await buildSandboxScanResult(
+      {
+        focus: input.session.focus,
+        repoUrl: input.session.repoUrl,
+        revision: input.session.revision,
+        useAi: input.useAi,
+      },
+      context,
+    );
+  } finally {
+    await stopSandboxScanSession(input.session);
+  }
+}
+
+export async function stopSandboxScanSession(session: SandboxScanSession) {
+  const sandboxId = session.sandbox?.sandboxId;
+  if (!sandboxId) {
+    return;
   }
 
-  return buildSandboxScanResult(input, context);
+  try {
+    const sandbox = await Sandbox.get({ sandboxId });
+    await sandbox.stop({ blocking: false });
+  } catch {
+    // Best-effort cleanup only. A sandbox timeout still bounds abandoned sessions.
+  }
 }
 
 export function normalizeRepoLocator(value: string): RepoLocator {
@@ -323,6 +441,52 @@ export function parseSandboxLanguageSourcePayload(
   });
 }
 
+function sandboxSessionFromContext(context: ReviewContext): SandboxScanSession {
+  return {
+    repo: context.repo,
+    repoName: context.repoName,
+    repoUrl: context.sandbox?.repoUrl ?? context.repo,
+    focus: context.focus,
+    revision: context.sandbox?.revision,
+    scannedFiles: context.scannedFiles,
+    sandbox: context.sandbox,
+  };
+}
+
+function contextFromSandboxSession(
+  session: SandboxScanSession,
+  toolResults: ToolCheckResult[],
+): ReviewContext {
+  const [owner] = session.repo.includes("/")
+    ? session.repo.split("/", 2)
+    : ["remote", session.repo];
+
+  return {
+    scope: "repo",
+    owner,
+    repoName: session.repoName,
+    repo: session.repo,
+    command: "scan",
+    focus: session.focus,
+    changedFiles: [],
+    docsFiles: [],
+    packageJson: null,
+    packageInfo: null,
+    readme: null,
+    envExample: null,
+    memoryInsights: [],
+    toolResults,
+    scannedFiles: session.scannedFiles,
+    sandbox:
+      session.sandbox ??
+      ({
+        repoUrl: session.repoUrl,
+        cloneDepth: CLONE_DEPTH,
+        revision: session.revision,
+      } satisfies SandboxScanMetadata),
+  };
+}
+
 function createSandboxContext(input: RepoScanInput, locator: RepoLocator): ReviewContext {
   const [owner] = locator.repo.includes("/")
     ? locator.repo.split("/", 2)
@@ -349,6 +513,92 @@ function createSandboxContext(input: RepoScanInput, locator: RepoLocator): Revie
       revision: input.revision,
     },
   };
+}
+
+function buildMissingSandboxToolResult(toolId: SandboxScanToolId): ToolCheckResult {
+  const meta = sandboxToolMeta(toolId);
+
+  return {
+    id: meta.id,
+    name: meta.name,
+    command: meta.command,
+    status: "error",
+    exitCode: null,
+    summary: `${meta.name} could not run because the sandbox session is missing a sandbox id.`,
+    issues: [
+      {
+        id: `${meta.id}-missing-sandbox`,
+        title: `${meta.name} could not run`,
+        severity: "medium",
+        category: "code-drift",
+        message: "Repo Deputy could not attach the analyzer to an active sandbox.",
+        evidence: ["The split scan session did not include a sandbox id."],
+        suggestedFix:
+          "Start a new scan session, then rerun the analyzer before the sandbox times out.",
+      },
+    ],
+  };
+}
+
+function buildSandboxToolFailureResult(
+  toolId: SandboxScanToolId,
+  error: unknown,
+): ToolCheckResult {
+  const meta = sandboxToolMeta(toolId);
+  const message = sandboxErrorMessage(error);
+
+  return {
+    id: meta.id,
+    name: meta.name,
+    command: meta.command,
+    status: "error",
+    exitCode: null,
+    summary: `${meta.name} could not run in the sandbox: ${message}`,
+    issues: [
+      {
+        id: `${meta.id}-sandbox-run-failed`,
+        title: `${meta.name} failed in the sandbox`,
+        severity: "medium",
+        category: "code-drift",
+        message,
+        evidence: [message],
+        suggestedFix:
+          "Rerun the scan. If it still fails, reduce repository size or check sandbox credentials.",
+      },
+    ],
+  };
+}
+
+function sandboxToolMeta(toolId: SandboxScanToolId) {
+  switch (toolId) {
+    case "fallow":
+      return {
+        id: "fallow",
+        name: "Fallow",
+        command: FALLOW_COMMAND,
+      };
+    case "light-language-analysis":
+      return {
+        id: "light-language-analysis",
+        name: "Lightweight language analysis",
+        command: "repo-deputy light-language-analysis (in-process)",
+      };
+    case "markdownlint":
+      return {
+        id: "markdownlint",
+        name: "markdownlint-cli2",
+        command: MARKDOWNLINT_COMMAND,
+      };
+    case "markdown-link-check":
+      return {
+        id: "markdown-link-check",
+        name: "markdown-link-check",
+        command: MARKDOWN_LINK_CHECK_COMMAND,
+      };
+  }
+
+  const exhaustive: never = toolId;
+  return exhaustive;
 }
 
 async function runSandboxCommand(
@@ -485,8 +735,7 @@ function buildLanguageSourceErrorResult(
           output.stderr ? `stderr: ${output.stderr.slice(0, 1_000)}` : "",
           output.stdout ? `stdout: ${output.stdout.slice(0, 1_000)}` : "",
         ].filter(Boolean),
-        suggestedFix:
-          "Rerun Repo Deputy locally or reduce the target source size before rerunning the sandbox scan.",
+        suggestedFix: "Reduce the target source size before rerunning the sandbox scan.",
       },
     ],
     output: {

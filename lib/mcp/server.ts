@@ -4,7 +4,6 @@ import { z } from "zod/v4";
 import { parseDeputyCommand } from "@/lib/commands/deputy-command";
 import { runCodeDriftChecks } from "@/lib/review/code-drift";
 import { runDocsDriftChecks } from "@/lib/review/docs-drift";
-import { runFallowAnalysis } from "@/lib/review/fallow";
 import { buildFallbackReport } from "@/lib/review/generate-report";
 import { runLightLanguageAnalysis } from "@/lib/review/light-language";
 import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
@@ -114,19 +113,14 @@ export function createRepoDeputyMcpServer() {
   server.registerTool(
     "repo_deputy_scan_repo",
     {
-      title: "Scan a local repository",
+      title: "Scan a public repository in Vercel Sandbox",
       description:
-        "Run Repo Deputy's whole-repository scanner against a local path and return findings plus markdown.",
+        "Run Repo Deputy's whole-repository scanner against a public git URL or GitHub owner/repo shorthand and return findings plus markdown.",
       inputSchema: {
-        rootPath: z
-          .string()
-          .optional()
-          .describe("Repository root. Defaults to the MCP server working directory."),
         repoUrl: z
           .string()
-          .optional()
           .describe(
-            "Public git URL or GitHub owner/repo shorthand. When set, Repo Deputy uses Vercel Sandbox with a depth=1 git source instead of rootPath.",
+            "Public git URL or GitHub owner/repo shorthand. Repo Deputy uses Vercel Sandbox with a depth=1 git checkout.",
           ),
         revision: z
           .string()
@@ -137,45 +131,23 @@ export function createRepoDeputyMcpServer() {
           .boolean()
           .default(false)
           .describe("Use Vercel AI Gateway when AI_GATEWAY_API_KEY is configured."),
-        useMemory: z
-          .boolean()
-          .default(false)
-          .describe("Read/write optional Mubit repo memory when configured."),
-        runExternalTools: z
-          .boolean()
-          .default(false)
-          .describe(
-            "For local rootPath scans, also run external CLI tools such as Fallow. Sandbox repoUrl scans always run the sandbox toolchain.",
-          ),
       },
       annotations: {
         readOnlyHint: false,
         openWorldHint: true,
       },
     },
-    async ({
-      rootPath,
-      repoUrl,
-      revision,
-      focus,
-      useAi,
-      useMemory,
-      runExternalTools,
-    }) => {
+    async ({ repoUrl, revision, focus, useAi }) => {
       const result = await runRepoScan({
-        rootPath,
         repoUrl,
         revision,
         focus,
         useAi,
-        useMemory,
-        runExternalTools,
       });
 
       return jsonResult({
         repo: result.context.repo,
         repoUrl: result.context.sandbox?.repoUrl,
-        rootPath: result.context.rootPath,
         sandbox: result.context.sandbox,
         scannedFiles: result.context.scannedFiles ?? result.context.changedFiles.length,
         mergeConfidence: result.report.mergeConfidence,
@@ -304,7 +276,6 @@ async function runDeterministicChecks(context: ReviewContext) {
   if (context.focus === "code" || context.focus === "full") {
     findings.push(...runCodeDriftChecks(context));
     findings.push(...runLightLanguageAnalysis(context));
-    findings.push(...(await runFallowAnalysis(context)));
   }
 
   return [...new Map(findings.map((finding) => [finding.id, finding])).values()];

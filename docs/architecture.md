@@ -8,7 +8,7 @@ surfaces: the Next.js app and a local stdio MCP server.
 ```txt
 Next.js app or MCP tool
   -> lib/scan/repo.ts
-  -> local repository file collection or depth-1 Vercel Sandbox git checkout
+  -> depth-1 Vercel Sandbox git checkout
   -> optional Mubit memory read
   -> deterministic docs/code drift checks or sandbox tool checks
   -> Vercel AI Gateway report generation or deterministic fallback
@@ -20,15 +20,23 @@ Next.js app or MCP tool
 
 ### `app/page.tsx`
 
-Renders the dashboard from a live scan of the current repository. It is an
+Renders the dashboard for a live sandbox scan of a public repository. It is an
 operational view, not a marketing page or generic code review surface.
 
-### `app/api/scan/route.ts`
+### `app/api/scan/*`
 
-Runs a scan and returns JSON:
+The app-facing scan API is split into phases while reusing one sandbox:
+
+- `POST /api/scan/session` starts the sandbox, clones the repo, prepares Bun,
+  and returns a session with the sandbox id plus initial `toolResults`.
+- `POST /api/scan/tool` runs one analyzer against that existing sandbox.
+- `POST /api/scan/report` accepts the accumulated `toolResults`, generates the
+  final report, and stops the sandbox.
+- `POST /api/scan/stop` releases an abandoned session best-effort.
+
+The final report response includes:
 
 - `repo`
-- `rootPath`
 - `scannedFiles`
 - `mergeConfidence`
 - `summary`
@@ -37,26 +45,18 @@ Runs a scan and returns JSON:
 - `memoryUsed`
 - `toolResults`
 
-It supports `?focus=docs`, `?focus=code`, `?focus=full`, `?ai=false`, and
-`?memory=true`. Passing `?repo=owner/repo` or a public git URL switches to the
-Vercel Sandbox scan path.
-
 ### `lib/scan/`
 
-Collects local repository context and orchestrates scans:
+Orchestrates sandbox scans:
 
-- Walks the repository with size and directory limits.
-- Creates Vercel Sandbox depth-1 git checkouts for remote `repoUrl` scans.
-- Reads text-like source, docs, config, and example files.
-- Builds a `ReviewContext` with `scope: "repo"`.
-- Runs deterministic checks for the selected focus.
+- Requires a public `repoUrl`.
+- Creates Vercel Sandbox depth-1 git checkouts.
+- Exposes session, per-tool, report-finalization, and cleanup helpers so API
+  phases can share one sandbox.
 - Runs Fallow, lightweight Python/Ruby/Object Pascal/Java analysis, markdownlint,
   and markdown-link-check for sandbox scans.
 - Calls report generation or deterministic fallback.
-- Writes sanitized memory when memory is enabled.
-
-The scanner ignores generated and dependency directories such as `.git`,
-`.next`, `coverage`, `dist`, `node_modules`, and `out`.
+- Does not read arbitrary local filesystem paths.
 
 ### `lib/review/`
 
@@ -77,14 +77,13 @@ Owns product intelligence:
 
 Provides local agent/tool integration:
 
-- `repo_deputy_scan_repo` scans a local repository path.
+- `repo_deputy_scan_repo` scans a public repository in Vercel Sandbox.
 - `repo_deputy_check_drift` runs deterministic checks against supplied fixtures.
 - `repo_deputy_render_report` renders markdown from a report-shaped payload.
 - `repo_deputy_demo_scan` returns seeded demo findings.
 - `repo_deputy_parse_command` keeps a small legacy command parser available.
 
-The scan tool defaults to no AI Gateway and no Mubit writes unless the caller
-explicitly opts in.
+The scan tool defaults to no AI Gateway. It does not write Mubit memory.
 
 ### `lib/memory/`
 

@@ -2,9 +2,16 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import type { LogLine, ScanResult } from "./data";
+import type { ApiToolResult, LogLine, ScanResult } from "./data";
 import { CodeText, Icon, Sym } from "./icons";
 import { SCAN_CHECKS } from "./data";
+
+const SPLIT_SCAN_TOOLS = [
+  "fallow",
+  "light-language-analysis",
+  "markdownlint",
+  "markdown-link-check",
+] as const;
 
 type Props = {
   repo: string;
@@ -43,22 +50,10 @@ export function Scanning({ repo, onComplete }: Props) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      repo,
-      focus: "full",
-      ai: "false",
-      memory: "false",
-    });
 
     async function scan() {
       try {
-        const response = await fetch(`/api/scan?${params.toString()}`, {
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Scan request failed with ${response.status}`);
-        }
-        setScanResult((await response.json()) as ScanResult);
+        setScanResult(await runSplitScan(repo, controller.signal));
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -273,6 +268,164 @@ export function Scanning({ repo, onComplete }: Props) {
   );
 }
 
+type SplitScanTool = (typeof SPLIT_SCAN_TOOLS)[number];
+
+type SplitScanSession = {
+  repo: string;
+  repoName?: string;
+  repoUrl: string;
+  focus: "docs" | "code" | "full";
+  revision?: string;
+  scannedFiles?: number;
+  sandbox?: {
+    repoUrl: string;
+    cloneDepth: number;
+    revision?: string;
+    commit?: string;
+    sandboxId?: string;
+  };
+};
+
+type SplitScanSessionResponse = {
+  session: SplitScanSession;
+  toolResults: ApiToolResult[];
+  ready: boolean;
+};
+
+async function runSplitScan(repo: string, signal: AbortSignal): Promise<ScanResult> {
+  let session: SplitScanSession | null = null;
+  const toolResults: ApiToolResult[] = [];
+
+  try {
+    const sessionResponse = await postJson<SplitScanSessionResponse>(
+      "/api/scan/session",
+      {
+        repo,
+        focus: "full",
+        ai: false,
+      },
+      signal,
+    );
+
+    session = sessionResponse.session;
+    toolResults.push(...sessionResponse.toolResults);
+
+    if (sessionResponse.ready) {
+      const analyzerResults = await Promise.all(
+        SPLIT_SCAN_TOOLS.map(async (tool) => {
+          try {
+            const response = await postJson<{ toolResult: ApiToolResult }>(
+              "/api/scan/tool",
+              {
+                session,
+                tool,
+              },
+              signal,
+            );
+            return response.toolResult;
+          } catch (error) {
+            if (signal.aborted) {
+              throw error;
+            }
+            return scanToolRequestError(tool, error);
+          }
+        }),
+      );
+      toolResults.push(...analyzerResults);
+    }
+
+    return postJson<ScanResult>(
+      "/api/scan/report",
+      {
+        session,
+        toolResults,
+        ai: false,
+      },
+      signal,
+    );
+  } catch (error) {
+    if (session && signal.aborted) {
+      void fetch("/api/scan/stop", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ session }),
+        keepalive: true,
+      });
+    } else if (session) {
+      await postJson(
+        "/api/scan/stop",
+        {
+          session,
+        },
+        signal,
+      ).catch(() => undefined);
+    }
+
+    throw error;
+  }
+}
+
+async function postJson<T>(
+  path: string,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`${path} failed with ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function scanToolRequestError(tool: SplitScanTool, error: unknown): ApiToolResult {
+  const message = error instanceof Error ? error.message : String(error);
+  const meta = scanToolMeta(tool);
+
+  return {
+    id: tool,
+    name: meta.name,
+    command: `POST /api/scan/tool ${tool}`,
+    status: "error",
+    exitCode: null,
+    summary: `${meta.name} request failed: ${message}`,
+    issues: [
+      {
+        id: `${tool}-request-failed`,
+        title: `${meta.name} request failed`,
+        severity: "medium",
+        category: "code-drift",
+        message,
+        evidence: [message],
+        suggestedFix: "Rerun the scan. If it still fails, check sandbox availability.",
+      },
+    ],
+  };
+}
+
+function scanToolMeta(tool: SplitScanTool) {
+  switch (tool) {
+    case "fallow":
+      return { name: "Fallow" };
+    case "light-language-analysis":
+      return { name: "Lightweight language analysis" };
+    case "markdownlint":
+      return { name: "markdownlint-cli2" };
+    case "markdown-link-check":
+      return { name: "markdown-link-check" };
+  }
+}
+
 function scanErrorResult(repo: string, error: unknown): ScanResult {
   const message = error instanceof Error ? error.message : String(error);
 
@@ -287,7 +440,7 @@ function scanErrorResult(repo: string, error: unknown): ScanResult {
       {
         id: "scan-request",
         name: "Scan request",
-        command: "GET /api/scan",
+        command: "POST /api/scan/session",
         status: "error",
         exitCode: null,
         summary: message,
@@ -303,7 +456,7 @@ function progressLogLines(repo: string, step: number): LogLine[] {
   return [
     {
       t: "info",
-      text: `Requesting sandbox scan for ${repo}`,
+      text: `Starting split sandbox scan for ${repo}`,
     },
     ...visibleChecks.map((check, index) => ({
       t: index < step ? ("ok" as const) : ("info" as const),
@@ -320,9 +473,7 @@ function resultLogLines(repo: string, result: ScanResult): LogLine[] {
       )
         ? "err"
         : "ok",
-      text: result.repoUrl
-        ? `Sandbox request for ${result.repoUrl}`
-        : `Local scan for ${repo}`,
+      text: `Sandbox request for ${result.repoUrl ?? repo}`,
     },
   ];
 

@@ -45,7 +45,7 @@ uses Mubit. If either is missing, the fallback memory adapter is used.
 
 Vercel Sandbox uses `VERCEL_OIDC_TOKEN` when available. Outside Vercel, set
 `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and `VERCEL_TOKEN` before remote
-repository scans. Local path scans do not require Sandbox credentials.
+repository scans.
 
 ## Local Development
 
@@ -55,21 +55,22 @@ bun run dev
 
 The app is available at `http://localhost:3000`.
 
-The JSON scan endpoint is available at:
+The app uses split scan endpoints so each phase can report progress while
+sharing one sandbox:
 
-```txt
-http://localhost:3000/api/scan?focus=full
+```bash
+curl -X POST http://localhost:3000/api/scan/session \
+  -H "content-type: application/json" \
+  -d '{"repo":"vercel/next.js","focus":"full","ai":false}'
 ```
 
-Supported focus values are `docs`, `code`, and `full`. Add `ai=false` for
-deterministic fallback reporting, or `memory=true` to opt into memory reads and
-writes when Mubit is configured.
-
-Remote repository scans use Vercel Sandbox and a shallow git checkout:
-
-```txt
-http://localhost:3000/api/scan?repo=vercel/next.js&focus=full&ai=false
-```
+Then call `/api/scan/tool` for `fallow`, `light-language-analysis`,
+`markdownlint`, and `markdown-link-check` with the returned session. Tool calls
+can run in parallel because they attach to the same sandbox id. Finish with
+`/api/scan/report`. Supported focus values are `docs`, `code`, and `full`. Use
+`ai=false` for deterministic fallback reporting. The `repo` field is required
+because app/API scans use Vercel Sandbox rather than reading local filesystem
+paths.
 
 The sandbox scan runs Fallow, lightweight Python/Ruby/Object Pascal/Java analysis,
 markdownlint, and markdown-link-check, then returns parsed `toolResults`
@@ -89,15 +90,14 @@ See [MCP Server](./mcp.md) for client configuration and tool inputs.
 
 Deploy the app as a standard Next.js App Router project on Vercel.
 
-The scan endpoint uses the Node.js runtime because it reads the deployed
-repository checkout:
+The scan endpoint uses the Node.js runtime because it starts Vercel Sandbox
+scans:
 
 ```ts
 export const runtime = "nodejs";
 ```
 
-Vercel deployments scan the deployed source tree. Local MCP scans are still the
-preferred way to point Repo Deputy at any arbitrary local repository path.
-Remote repository scans use Vercel Sandbox from `/api/scan?repo=owner/repo`;
-the route exports a 300-second max duration so clone and analyzer runs can
-finish in production before falling back to deterministic report rendering.
+Repository scans use Vercel Sandbox from the `/api/scan/session`,
+`/api/scan/tool`, and `/api/scan/report` route phases. Scan routes export a
+300-second max duration so clone and analyzer runs can finish in production
+before falling back to deterministic report rendering.

@@ -187,7 +187,7 @@ describe("analyzeLightLanguageFiles", () => {
 });
 
 describe("runLightLanguageAnalysis", () => {
-  test("does not add a local tool result when no supported files exist", () => {
+  test("does not add a tool result when no supported files exist", () => {
     const context: ReviewContext = {
       scope: "repo",
       repo: "local/repo",

@@ -33,7 +33,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
   ).length;
   const summaryRows = scanResult
     ? [
-        { label: "Source", value: scanResult.repoUrl ? "Sandbox" : "Local" },
+        { label: "Source", value: "Sandbox" },
         { label: "Files scanned", value: scanResult.scannedFiles.toLocaleString() },
         { label: "Findings", value: String(scanResult.findings.length) },
         {

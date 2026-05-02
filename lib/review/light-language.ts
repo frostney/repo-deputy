@@ -108,7 +108,7 @@ export function runLightLanguageAnalysis(context: ReviewContext): Finding[] {
   const result = buildLightLanguageToolResult({
     files,
     skipped,
-    source: context.rootPath ? "local" : "fixture",
+    source: "fixture",
   });
   context.toolResults.push(result);
 
@@ -118,7 +118,7 @@ export function runLightLanguageAnalysis(context: ReviewContext): Finding[] {
 export function buildLightLanguageToolResult(input: {
   files: SourceFile[];
   skipped?: SkippedCounts;
-  source?: "local" | "sandbox" | "fixture";
+  source?: "sandbox" | "fixture";
 }): ToolCheckResult {
   const skipped = normalizeSkippedCounts(input.skipped);
   const sources = classifySources(input.files);
@@ -264,7 +264,7 @@ function buildScanLimitIssue(skipped: Required<SkippedCounts>): ToolCheckIssue |
       `Unreadable files: ${skipped.unreadable}`,
     ],
     suggestedFix:
-      "Run Repo Deputy locally with a smaller target or inspect the skipped large source files manually.",
+      "Reduce the target source size, then rerun the sandbox scan or inspect the skipped large source files manually.",
   };
 }
 

@@ -99,11 +99,16 @@ bun run dev
 
 Open `http://localhost:3000` to see the Repo Deputy scan dashboard.
 
-Call the JSON endpoint:
+Start a split sandbox scan session:
 
 ```bash
-curl "http://localhost:3000/api/scan?focus=full&ai=false"
+curl -X POST http://localhost:3000/api/scan/session \
+  -H "content-type: application/json" \
+  -d '{"repo":"vercel/next.js","focus":"full","ai":false}'
 ```
+
+Use the returned session with `/api/scan/tool`, then pass accumulated
+`toolResults` to `/api/scan/report`.
 
 ## Local MCP Server
 

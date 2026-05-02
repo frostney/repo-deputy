@@ -77,10 +77,14 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
             <div className="self-start rounded border-[1.5px] border-gold-warm px-2.5 py-1 font-semibold font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.25em] text-gold-warm">
               Mostly Honest · Score 76
             </div>
-            <button type="button" className="btn btn-primary btn-lg" onClick={onPropose}>
+            <button
+              type="button"
+              className="btn btn-primary btn-lg hidden"
+              onClick={onPropose}
+            >
               <Icon name="git-pull" size={16} /> Deputize a PR
             </button>
-            <button type="button" className="btn btn-ghost btn-sm">
+            <button type="button" className="btn btn-ghost btn-sm hidden">
               <Icon name="external" size={12} /> Export report
             </button>
           </div>
@@ -161,15 +165,11 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
             {filtered.map((f) => (
               <div
                 key={f.id}
-                className={`cursor-pointer border-b border-line-soft transition-colors last:border-b-0 hover:bg-ink-3 ${
+                className={`border-b border-line-soft transition-colors last:border-b-0 ${
                   expanded === f.id ? "bg-ink-3" : ""
                 }`}
               >
-                <button
-                  type="button"
-                  className="grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-4 border-0 bg-transparent px-5 py-3.5 text-left"
-                  onClick={() => setExpanded(expanded === f.id ? null : f.id)}
-                >
+                <div className="grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-4 px-5 py-3.5">
                   <span className={`pill pill-${f.severity}`}>{f.severity}</span>
                   <div>
                     <div className="text-sm font-medium text-text">
@@ -182,16 +182,19 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
                   <span className="rounded border border-line px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
                     {f.category}
                   </span>
-                  <span
-                    className={`text-text-mute transition-transform ${
+                  <button
+                    type="button"
+                    aria-label="Toggle details"
+                    onClick={() => setExpanded(expanded === f.id ? null : f.id)}
+                    className={`hidden cursor-pointer border-0 bg-transparent text-text-mute transition-transform ${
                       expanded === f.id ? "rotate-90" : ""
                     }`}
                   >
                     <Icon name="chevron-right" size={14} />
-                  </span>
-                </button>
+                  </button>
+                </div>
                 {expanded === f.id && (
-                  <div className="grid gap-4 px-5 pb-5">
+                  <div className="hidden gap-4 px-5 pb-5">
                     <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
                       <CodeText>{f.description}</CodeText>
                     </p>
@@ -314,7 +317,7 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
               />
             </div>
 
-            <div className="rounded-[10px] border border-line bg-gradient-to-b from-gold/10 to-transparent p-5">
+            <div className="hidden rounded-[10px] border border-line bg-gradient-to-b from-gold/10 to-transparent p-5">
               <h4 className="feature-soft m-0 mb-3.5 flex items-center gap-2 font-[family-name:var(--font-serif)] text-[15px] font-medium">
                 <Icon name="sparkle" size={14} /> Quick win
               </h4>

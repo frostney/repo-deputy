@@ -349,34 +349,6 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
               </div>
             ) : null}
 
-            <div className="rounded-[10px] border border-line bg-ink-2 p-5">
-              <h4 className="feature-soft m-0 mb-3.5 font-[family-name:var(--font-serif)] text-[15px] font-medium">
-                Past patrols
-              </h4>
-              <PatrolItem
-                grade="b"
-                num="76"
-                title="Today · canary"
-                sub="52 findings · 9f4e21a"
-                delta="+4"
-              />
-              <PatrolItem
-                grade="c"
-                num="72"
-                title="3 days ago"
-                sub="68 findings · 7c1d8b2"
-                delta="−12"
-              />
-              <PatrolItem
-                grade="c"
-                num="74"
-                title="Last week"
-                sub="56 findings · 4a2e0c1"
-                delta="−2"
-                deltaDown
-              />
-            </div>
-
             <div className="hidden rounded-[10px] border border-line bg-gradient-to-b from-gold/10 to-transparent p-5">
               <h4 className="feature-soft m-0 mb-3.5 flex items-center gap-2 font-[family-name:var(--font-serif)] text-[15px] font-medium">
                 <Icon name="sparkle" size={14} /> Quick win
@@ -479,49 +451,4 @@ function verdictLabel(confidence: ScanResult["mergeConfidence"] | undefined) {
     return "Needs Review";
   }
   return "Mostly Honest";
-}
-
-function PatrolItem({
-  grade,
-  num,
-  title,
-  sub,
-  delta,
-  deltaDown,
-}: {
-  grade: "a" | "b" | "c";
-  num: string;
-  title: string;
-  sub: string;
-  delta: string;
-  deltaDown?: boolean;
-}) {
-  const tone =
-    grade === "a"
-      ? "bg-sage/15 text-sage-warm"
-      : grade === "b"
-        ? "bg-gold/15 text-gold"
-        : "bg-rust/15 text-rust";
-  return (
-    <div className="flex items-center gap-3 border-b border-line-soft py-2.5 last:border-b-0 last:pb-0">
-      <div
-        className={`flex h-7 w-9 shrink-0 items-center justify-center rounded-full font-semibold font-[family-name:var(--font-serif)] text-sm tabular-nums ${tone}`}
-      >
-        {num}
-      </div>
-      <div className="flex-1">
-        <div className="text-xs text-text">{title}</div>
-        <div className="mt-0.5 font-[family-name:var(--font-mono)] text-[10px] text-text-mute">
-          {sub}
-        </div>
-      </div>
-      <div
-        className={`font-[family-name:var(--font-mono)] text-[11px] ${
-          deltaDown ? "text-oxblood-soft" : "text-sage-warm"
-        }`}
-      >
-        {delta}
-      </div>
-    </div>
-  );
 }

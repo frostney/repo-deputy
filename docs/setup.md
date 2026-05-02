@@ -23,6 +23,7 @@ Optional:
 ```bash
 AI_GATEWAY_API_KEY=
 AI_GATEWAY_MODEL=anthropic/claude-sonnet-4.6
+AI_GATEWAY_TIMEOUT_MS=6000
 
 MUBIT_ENABLED=false
 MUBIT_API_KEY=
@@ -36,6 +37,8 @@ VERCEL_TOKEN=
 
 `AI_GATEWAY_API_KEY` enables model-backed report summarization through Vercel AI
 Gateway. If it is missing, Repo Deputy falls back to a deterministic report.
+`AI_GATEWAY_TIMEOUT_MS` bounds production Gateway calls so deployed scans can
+fall back before the request times out.
 
 `MUBIT_ENABLED=true` and `MUBIT_API_KEY` are both required before Repo Deputy
 uses Mubit. If either is missing, the fallback memory adapter is used.
@@ -92,3 +95,6 @@ export const runtime = "nodejs";
 
 Vercel deployments scan the deployed source tree. Local MCP scans are still the
 preferred way to point Repo Deputy at any arbitrary local repository path.
+Remote repository scans use Vercel Sandbox from `/api/scan?repo=owner/repo`;
+the route exports a 300-second max duration so clone and analyzer runs can
+finish in production before falling back to deterministic report rendering.

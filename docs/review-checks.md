@@ -77,8 +77,9 @@ The model prompt instructs Repo Deputy to:
 - Rank findings by merge risk.
 - Prefer repo truthfulness over generic style comments.
 
-If `AI_GATEWAY_API_KEY` is missing, `useAi` is false, or generation fails, Repo
-Deputy creates a deterministic fallback report.
+If `AI_GATEWAY_API_KEY` is missing, `useAi` is false, generation fails, or the
+Gateway call exceeds `AI_GATEWAY_TIMEOUT_MS`, Repo Deputy creates a deterministic
+fallback report.
 
 ## Markdown Output
 

@@ -94,7 +94,7 @@ export function Results({ repo, onOpenIssue, onPropose, onHome }: Props) {
           {CATEGORIES.map((c) => (
             <div
               key={c.key}
-              className="relative flex cursor-pointer flex-col gap-3.5 overflow-hidden rounded-[10px] border border-line bg-ink-2 p-5 transition-all hover:-translate-y-0.5 hover:border-text-mute hover:shadow-[0_1px_0_rgba(255,255,255,0.03),0_12px_32px_-12px_rgba(0,0,0,0.6)]"
+              className="relative flex flex-col gap-3.5 overflow-hidden rounded-[10px] border border-line bg-ink-2 p-5"
             >
               <div className="flex items-center justify-between">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-3 text-text">

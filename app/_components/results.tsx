@@ -375,37 +375,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                 </div>
               ))}
               {lineStats?.languages.length ? (
-                <details className="mt-2 border-t border-line-soft pt-2">
-                  <summary className="flex cursor-pointer items-center justify-between py-2 font-[family-name:var(--font-mono)] text-[12px] text-text-soft marker:text-text-mute hover:text-text">
-                    Language breakdown
-                    <span className="text-[10px] uppercase tracking-[0.12em] text-text-mute">
-                      LOC / SLOC
-                    </span>
-                  </summary>
-                  <div className="mt-1 grid gap-1.5">
-                    {lineStats.languages.map((language) => (
-                      <div
-                        key={language.language}
-                        className="grid grid-cols-[1fr_auto] gap-3 rounded border border-line-soft bg-ink-3 px-2.5 py-2 text-[11px]"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-text">
-                            {language.language}
-                          </div>
-                          <div className="font-[family-name:var(--font-mono)] text-text-mute">
-                            {language.files.toLocaleString()} files
-                          </div>
-                        </div>
-                        <div className="text-right font-[family-name:var(--font-mono)] text-text">
-                          <div>{language.loc.toLocaleString()}</div>
-                          <div className="text-text-mute">
-                            {language.sloc.toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
+                <LanguageBreakdown stats={lineStats} />
               ) : null}
             </div>
 
@@ -502,6 +472,7 @@ function toDashboardFinding(
       return url ? { ...source, url } : source;
     }),
     suggestedFix: finding.suggestedFix,
+    confidence: finding.confidence,
     impact: finding.severity === "high" ? "high" : finding.severity,
     effort: "medium",
   };
@@ -572,6 +543,72 @@ function encodeRepoPath(filePath: string) {
 
 function formatCount(value: number | undefined) {
   return typeof value === "number" ? value.toLocaleString() : "Unknown";
+}
+
+function LanguageBreakdown({ stats }: { stats: NonNullable<ScanResult["lineStats"]> }) {
+  const total = stats.sloc > 0 ? stats.sloc : stats.loc;
+
+  return (
+    <details className="mt-2 border-t border-line-soft pt-2">
+      <summary className="flex cursor-pointer items-center justify-between py-2 font-[family-name:var(--font-mono)] text-[12px] text-text-soft marker:text-text-mute hover:text-text">
+        Language breakdown
+        <span className="text-[10px] uppercase tracking-[0.12em] text-text-mute">
+          % · LOC / SLOC
+        </span>
+      </summary>
+      <div className="mt-1 grid gap-2.5">
+        {stats.languages.map((language, index) => {
+          const lineCount = stats.sloc > 0 ? language.sloc : language.loc;
+          const percent = total > 0 ? (lineCount / total) * 100 : 0;
+
+          return (
+            <div
+              key={language.language}
+              className="border-b border-line-soft pb-2.5 last:border-b-0 last:pb-0"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px]">
+                <span className="min-w-0 truncate font-medium text-text">
+                  {language.language}
+                </span>
+                <span className="shrink-0 font-[family-name:var(--font-mono)] text-text">
+                  {formatPercent(percent)}
+                </span>
+              </div>
+              <div
+                className="h-1.5 overflow-hidden rounded-sm bg-ink-4"
+                role="progressbar"
+                aria-label={`${language.language} ${formatPercent(percent)} of repository SLOC`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(percent)}
+              >
+                <div
+                  className="language-share-bar h-full rounded-sm bg-gold-warm"
+                  style={{
+                    width: `${percent}%`,
+                    animationDelay: `${index * 45}ms`,
+                  }}
+                />
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 font-[family-name:var(--font-mono)] text-[10px] text-text-mute">
+                <span>{language.files.toLocaleString()} files</span>
+                <span>{language.loc.toLocaleString()} LOC</span>
+                <span>{language.sloc.toLocaleString()} SLOC</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return "0%";
+  }
+
+  return value >= 10 ? `${Math.round(value)}%` : `${value.toFixed(1)}%`;
 }
 
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {

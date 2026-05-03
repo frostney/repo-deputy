@@ -13,6 +13,7 @@ export type Finding = {
   files?: string[];
   sources?: FindingSource[];
   suggestedFix?: string;
+  confidence?: number;
   impact: string;
   effort: string;
 };
@@ -52,9 +53,13 @@ export type ApiToolResult = {
   issues: Array<{
     id: string;
     title: string;
+    severity?: "high" | "medium" | "low";
+    category?: string;
     path?: string;
     line?: number;
     message: string;
+    evidence?: string[];
+    suggestedFix?: string;
   }>;
 };
 

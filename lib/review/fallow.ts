@@ -1,7 +1,4 @@
-import { spawn } from "node:child_process";
 import type {
-  Finding,
-  ReviewContext,
   ToolCheckIssue,
   ToolCheckOutput,
   ToolCheckResult,
@@ -24,18 +21,6 @@ type JsonRecord = Record<string, unknown>;
 const MAX_OUTPUT_CHARS = 12_000;
 const MAX_FILES = 12;
 
-export async function runFallowAnalysis(context: ReviewContext): Promise<Finding[]> {
-  if (!context.runExternalTools || !context.rootPath) {
-    return [];
-  }
-
-  const output = await runLocalCommand(FALLOW_COMMAND, context.rootPath);
-  const result = buildFallowToolResult(output);
-  context.toolResults.push(result);
-
-  return toolIssuesToFindings(result);
-}
-
 export function buildFallowToolResult(output: CommandOutput): ToolCheckResult {
   if (output.exitCode === null) {
     return {
@@ -54,7 +39,7 @@ export function buildFallowToolResult(output: CommandOutput): ToolCheckResult {
           category: "code-drift",
           message: "Fallow did not return an exit code.",
           evidence: outputEvidence(output),
-          suggestedFix: "Re-run Fallow locally and inspect the command failure.",
+          suggestedFix: "Rerun the sandbox scan and inspect the Fallow command failure.",
         },
       ],
       output: trimOutput(output),
@@ -87,7 +72,7 @@ export function buildFallowToolResult(output: CommandOutput): ToolCheckResult {
                 message: "Repo Deputy expected `fallow --format json` output.",
                 evidence: outputEvidence(output),
                 suggestedFix:
-                  "Run `bunx fallow --format json --quiet --summary --no-cache` in the checkout and fix the reported command error.",
+                  "Run `bunx fallow --format json --quiet --summary --no-cache` in the sandbox checkout and fix the reported command error.",
               },
             ],
       output: trimOutput(output),
@@ -158,20 +143,6 @@ export function fallowJsonToToolIssues(raw: unknown): ToolCheckIssue[] {
   }
 
   return issues;
-}
-
-export function toolIssuesToFindings(result: ToolCheckResult): Finding[] {
-  return result.issues.map((issue) => ({
-    id: issue.id,
-    category: issue.category,
-    severity: issue.severity,
-    title: issue.title,
-    summary: issue.message,
-    evidence: issue.evidence,
-    files: issue.path ? [issue.path] : [],
-    suggestedFix: issue.suggestedFix,
-    confidence: result.status === "error" ? 0.7 : 0.86,
-  }));
 }
 
 function deadCodeIssues(check: JsonRecord): ToolCheckIssue[] {
@@ -413,41 +384,6 @@ function hasPositiveCount(summary: JsonRecord | null, fields: string[]) {
   }
 
   return fields.some((field) => (numberValue(summary[field]) ?? 0) > 0);
-}
-
-async function runLocalCommand(command: string, cwd: string): Promise<CommandOutput> {
-  const startedAt = Date.now();
-
-  return new Promise((resolve) => {
-    const child = spawn("bash", ["-lc", command], {
-      cwd,
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-
-    child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
-    child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-    child.on("error", (error) => {
-      resolve({
-        command,
-        exitCode: null,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: `${Buffer.concat(stderr).toString("utf8")}\n${error.message}`.trim(),
-        durationMs: Date.now() - startedAt,
-      });
-    });
-    child.on("close", (exitCode) => {
-      resolve({
-        command,
-        exitCode,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-        durationMs: Date.now() - startedAt,
-      });
-    });
-  });
 }
 
 function parseJsonObject(stdout: string): JsonRecord | null {

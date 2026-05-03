@@ -48,6 +48,13 @@ export type ToolCheckResult = {
   output?: ToolCheckOutput;
 };
 
+export type LightLanguageSkipped = {
+  tooLarge?: number;
+  unsupported?: number;
+  totalLimit?: number;
+  unreadable?: number;
+};
+
 export type SandboxScanMetadata = {
   repoUrl: string;
   cloneDepth: number;
@@ -137,19 +144,15 @@ export type ReviewContext = {
   toolResults: ToolCheckResult[];
   lineStats?: RepoLineStats;
   sourceExcerpts?: FindingSourceExcerpt[];
+  lightLanguageSkipped?: LightLanguageSkipped;
   sandbox?: SandboxScanMetadata;
-  runExternalTools?: boolean;
 };
 
 export type RepoScanInput = {
   focus: ReviewFocus;
-  rootPath?: string;
-  repoUrl?: string;
+  repoUrl: string;
   revision?: string;
   useAi?: boolean;
-  useMemory?: boolean;
-  useSandbox?: boolean;
-  runExternalTools?: boolean;
 };
 
 export type RepoScanResult = {

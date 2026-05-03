@@ -208,13 +208,13 @@ function buildComplexityIssue(
 
   return {
     id: `light-language-${language}-complexity`,
-    title: `Lightweight ${LANGUAGE_LABELS[language]} analyzer found ${
+    title: `${LANGUAGE_LABELS[language]} analysis found ${
       hotspots.length
     } structural complexity hotspot${hotspots.length === 1 ? "" : "s"}`,
     severity,
     category: "architecture-drift",
     path: files[0],
-    message: `Lightweight language analysis found heuristic structural complexity hotspots in ${LANGUAGE_LABELS[language]} code.`,
+    message: `Language analysis found heuristic structural complexity hotspots in ${LANGUAGE_LABELS[language]} code.`,
     evidence: hotspots
       .slice(0, MAX_COMPLEXITY_EVIDENCE)
       .map(
@@ -246,13 +246,13 @@ function buildDuplicationIssue(
 
   return {
     id: `light-language-${language}-duplication`,
-    title: `Lightweight ${LANGUAGE_LABELS[language]} analyzer found ${
+    title: `${LANGUAGE_LABELS[language]} analysis found ${
       groups.length
     } duplicate code block${groups.length === 1 ? "" : "s"}`,
     severity,
     category: "code-drift",
     path: files[0],
-    message: `Lightweight language analysis found repeated normalized code blocks in ${LANGUAGE_LABELS[language]} code.`,
+    message: `Language analysis found repeated normalized code blocks in ${LANGUAGE_LABELS[language]} code.`,
     evidence: groups.slice(0, MAX_DUPLICATE_GROUPS).map(formatDuplicateGroup),
     suggestedFix:
       "Compare the duplicate blocks and extract shared helpers or remove stale parallel implementations where the behavior should stay in sync.",
@@ -272,13 +272,13 @@ function buildScanLimitIssue(
   return {
     id: language ? `light-language-${language}-scan-limit` : "light-language-scan-limit",
     title: languageLabel
-      ? `Lightweight ${languageLabel} analysis skipped some source files`
-      : "Lightweight language analysis skipped some source files",
+      ? `${languageLabel} analysis skipped some source files`
+      : "Language analysis skipped some source files",
     severity: skipped.totalLimit > 0 ? "medium" : "low",
     category: "code-drift",
     message: languageLabel
-      ? `Lightweight language analysis did not inspect every matching ${languageLabel} file because collection limits were reached.`
-      : "Lightweight language analysis did not inspect every matching Python, Ruby, Object Pascal, or Java file because collection limits were reached.",
+      ? `Language analysis did not inspect every matching ${languageLabel} file because collection limits were reached.`
+      : "Language analysis did not inspect every matching Python, Ruby, Object Pascal, or Java file because collection limits were reached.",
     evidence: [
       `Files too large: ${skipped.tooLarge}`,
       `Files skipped by total-size limit: ${skipped.totalLimit}`,
@@ -293,7 +293,7 @@ function lightLanguageToolMeta(language?: SourceLanguage) {
   if (!language) {
     return {
       id: LIGHT_LANGUAGE_TOOL_ID,
-      name: "Lightweight language analysis",
+      name: "Language analysis",
       command: LIGHT_LANGUAGE_COMMAND,
     };
   }
@@ -842,10 +842,8 @@ function summarizeResult(
   ].filter(Boolean);
 
   return parts.length
-    ? `Lightweight language analysis inspected ${languageSummary} and reported ${parts.join(
-        ", ",
-      )}.`
-    : `Lightweight language analysis inspected ${languageSummary} without structural complexity or duplicate-block findings.`;
+    ? `Language analysis inspected ${languageSummary} and reported ${parts.join(", ")}.`
+    : `Language analysis inspected ${languageSummary} without structural complexity or duplicate-block findings.`;
 }
 
 function cleanLineForComplexity(line: string, language: SourceLanguage) {

@@ -11,10 +11,23 @@ export type Finding = {
   description: string;
   evidence?: string[];
   files?: string[];
+  sources?: FindingSource[];
   suggestedFix?: string;
   confidence?: number;
   impact: string;
   effort: string;
+};
+
+export type FindingSource = {
+  path: string;
+  line?: number;
+  startLine: number;
+  endLine: number;
+  lines: Array<{
+    number: number;
+    text: string;
+  }>;
+  url?: string;
 };
 
 export type ApiFinding = {
@@ -25,6 +38,7 @@ export type ApiFinding = {
   summary: string;
   evidence: string[];
   files: string[];
+  sources?: FindingSource[];
   suggestedFix: string;
   confidence: number;
 };
@@ -49,10 +63,32 @@ export type ApiToolResult = {
   }>;
 };
 
+export type RepoLineStats = {
+  files: number;
+  loc: number;
+  sloc: number;
+  prominentLanguage: string | null;
+  languages: Array<{
+    language: string;
+    files: number;
+    loc: number;
+    sloc: number;
+  }>;
+};
+
 export type ScanResult = {
   repo: string;
   repoUrl?: string;
+  rootPath?: string;
+  sandbox?: {
+    repoUrl: string;
+    cloneDepth: number;
+    revision?: string;
+    commit?: string;
+    sandboxId?: string;
+  };
   scannedFiles: number;
+  lineStats?: RepoLineStats;
   mergeConfidence: "safe" | "needs-docs-update" | "needs-human-review";
   summary: string;
   findings: ApiFinding[];
@@ -195,7 +231,7 @@ export const SCAN_CHECKS: ScanCheck[] = [
   {
     id: "bun",
     name: "Preparing toolchain",
-    meta: "Bun runtime for analyzer CLIs",
+    meta: "Bun runtime for audit CLIs",
     duration: 1200,
   },
   {

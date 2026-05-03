@@ -97,6 +97,34 @@ export type RepoFile = {
   size?: number;
 };
 
+export type RepoLanguageLineStats = {
+  language: string;
+  files: number;
+  loc: number;
+  sloc: number;
+};
+
+export type RepoLineStats = {
+  files: number;
+  loc: number;
+  sloc: number;
+  prominentLanguage: string | null;
+  languages: RepoLanguageLineStats[];
+};
+
+export type SourceExcerptLine = {
+  number: number;
+  text: string;
+};
+
+export type FindingSourceExcerpt = {
+  path: string;
+  line?: number;
+  startLine: number;
+  endLine: number;
+  lines: SourceExcerptLine[];
+};
+
 export type ReviewContext = {
   scope: "repo" | "change-set";
   owner?: string;
@@ -114,6 +142,8 @@ export type ReviewContext = {
   envExample: RepoFile | null;
   memoryInsights: RepoMemoryInsight[];
   toolResults: ToolCheckResult[];
+  lineStats?: RepoLineStats;
+  sourceExcerpts?: FindingSourceExcerpt[];
   lightLanguageSkipped?: LightLanguageSkipped;
   sandbox?: SandboxScanMetadata;
 };

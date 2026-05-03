@@ -45,6 +45,7 @@ describe("split scan API helpers", () => {
       focus: "full",
       revision: undefined,
       scannedFiles: 123,
+      lineStats: undefined,
       languageFiles: { python: 2 },
       sandbox: {
         repoUrl: "https://github.com/vercel/next.js.git",

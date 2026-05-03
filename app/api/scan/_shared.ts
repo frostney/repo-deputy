@@ -1,4 +1,7 @@
 import type {
+  Finding,
+  FindingSourceExcerpt,
+  RepoLineStats,
   RepoScanResult,
   ReviewFocus,
   SandboxScanMetadata,
@@ -64,6 +67,7 @@ export function parseSandboxSession(value: unknown): SandboxScanSession {
     focus: parseFocus(textField(session.focus)),
     revision: textField(session.revision),
     scannedFiles,
+    lineStats: parseLineStats(session.lineStats),
     languageFiles: parseLanguageFiles(session.languageFiles),
     sandbox,
   };
@@ -105,9 +109,12 @@ export function scanResultResponse(result: RepoScanResult) {
     repoUrl: result.context.sandbox?.repoUrl,
     sandbox: result.context.sandbox,
     scannedFiles: result.context.scannedFiles ?? result.context.changedFiles.length,
+    lineStats: result.context.lineStats,
     mergeConfidence: result.report.mergeConfidence,
     summary: result.report.summary,
-    findings: result.report.findings,
+    findings: result.report.findings.map((finding) =>
+      toApiFinding(finding, result.context.sourceExcerpts ?? []),
+    ),
     markdown: result.markdown,
     memoryUsed: result.report.memoryUsed ?? [],
     toolResults: result.report.toolResults ?? [],
@@ -169,6 +176,53 @@ function parseLanguageFiles(value: unknown): Partial<Record<SourceLanguage, numb
   }
 
   return languageFiles;
+}
+
+function parseLineStats(value: unknown): RepoLineStats | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const languages = Array.isArray(record.languages)
+    ? record.languages
+        .map((entry) =>
+          entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null,
+        )
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => ({
+          language: typeof entry.language === "string" ? entry.language : "",
+          files: numberField(entry.files),
+          loc: numberField(entry.loc),
+          sloc: numberField(entry.sloc),
+        }))
+        .filter(
+          (
+            entry,
+          ): entry is { language: string; files: number; loc: number; sloc: number } =>
+            Boolean(entry.language) &&
+            entry.files !== undefined &&
+            entry.loc !== undefined &&
+            entry.sloc !== undefined,
+        )
+    : [];
+
+  return {
+    files:
+      numberField(record.files) ?? languages.reduce((sum, row) => sum + row.files, 0),
+    loc: numberField(record.loc) ?? languages.reduce((sum, row) => sum + row.loc, 0),
+    sloc: numberField(record.sloc) ?? languages.reduce((sum, row) => sum + row.sloc, 0),
+    prominentLanguage:
+      typeof record.prominentLanguage === "string" ? record.prominentLanguage : null,
+    languages,
+  };
+}
+
+function toApiFinding(finding: Finding, sourceExcerpts: FindingSourceExcerpt[]) {
+  return {
+    ...finding,
+    sources: sourceExcerpts.filter((source) => finding.files.includes(source.path)),
+  };
 }
 
 function isToolCheckResult(value: unknown): value is ToolCheckResult {
@@ -236,4 +290,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function textField(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

@@ -37,6 +37,40 @@ describe("calculateRepoLineStats", () => {
       "Environment",
     ]);
   });
+
+  test("counts non-JavaScript source languages", () => {
+    const stats = calculateRepoLineStats([
+      {
+        path: "scripts/audit.py",
+        content: "# comment\nprint('x')\n",
+      },
+      {
+        path: "Gemfile",
+        content: "# frozen_string_literal: true\nsource 'https://rubygems.org'\n",
+      },
+      {
+        path: "src/Main.java",
+        content: "// comment\nclass Main {}\n",
+      },
+      {
+        path: "src/unit.pas",
+        content: "{ comment }\nbegin\nend.\n",
+      },
+    ]);
+
+    expect(stats).toMatchObject({
+      files: 4,
+      loc: 9,
+      sloc: 5,
+      prominentLanguage: "Object Pascal",
+    });
+    expect(stats.languages.map((entry) => entry.language)).toEqual([
+      "Object Pascal",
+      "Java",
+      "Python",
+      "Ruby",
+    ]);
+  });
 });
 
 describe("buildSourceExcerpt", () => {

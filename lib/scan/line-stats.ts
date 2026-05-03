@@ -8,7 +8,7 @@ import type {
   RepoLineStats,
 } from "@/lib/review/types";
 
-type LanguageKind = "code" | "hash-comment" | "text";
+type LanguageKind = "code" | "hash-comment" | "pascal" | "text";
 
 type LanguageDefinition = {
   language: string;
@@ -29,20 +29,58 @@ const MAX_STATS_FILE_BYTES = 1_000_000;
 const DEFAULT_SOURCE_CONTEXT_LINES = 6;
 
 const LANGUAGE_BY_EXTENSION: Record<string, LanguageDefinition> = {
+  ".bash": { language: "Shell", kind: "hash-comment" },
+  ".c": { language: "C", kind: "code" },
   ".cjs": { language: "JavaScript", kind: "code" },
+  ".cpp": { language: "C++", kind: "code" },
+  ".cs": { language: "C#", kind: "code" },
   ".css": { language: "CSS", kind: "code" },
+  ".cxx": { language: "C++", kind: "code" },
+  ".dart": { language: "Dart", kind: "code" },
+  ".dpk": { language: "Object Pascal", kind: "pascal" },
+  ".dpr": { language: "Object Pascal", kind: "pascal" },
   ".env": { language: "Environment", kind: "hash-comment" },
+  ".go": { language: "Go", kind: "code" },
+  ".gemspec": { language: "Ruby", kind: "hash-comment" },
+  ".h": { language: "C", kind: "code" },
+  ".hpp": { language: "C++", kind: "code" },
+  ".hxx": { language: "C++", kind: "code" },
+  ".inc": { language: "Object Pascal", kind: "pascal" },
+  ".java": { language: "Java", kind: "code" },
   ".js": { language: "JavaScript", kind: "code" },
   ".json": { language: "JSON", kind: "text" },
   ".jsx": { language: "JavaScript JSX", kind: "code" },
+  ".kt": { language: "Kotlin", kind: "code" },
+  ".kts": { language: "Kotlin", kind: "code" },
+  ".lpr": { language: "Object Pascal", kind: "pascal" },
   ".md": { language: "Markdown", kind: "text" },
   ".mdx": { language: "MDX", kind: "text" },
   ".mjs": { language: "JavaScript", kind: "code" },
+  ".pas": { language: "Object Pascal", kind: "pascal" },
+  ".php": { language: "PHP", kind: "code" },
+  ".pp": { language: "Object Pascal", kind: "pascal" },
+  ".py": { language: "Python", kind: "hash-comment" },
+  ".pyi": { language: "Python", kind: "hash-comment" },
+  ".pyw": { language: "Python", kind: "hash-comment" },
+  ".rake": { language: "Ruby", kind: "hash-comment" },
+  ".rb": { language: "Ruby", kind: "hash-comment" },
+  ".rs": { language: "Rust", kind: "code" },
+  ".scala": { language: "Scala", kind: "code" },
+  ".sh": { language: "Shell", kind: "hash-comment" },
+  ".swift": { language: "Swift", kind: "code" },
   ".ts": { language: "TypeScript", kind: "code" },
   ".tsx": { language: "TypeScript TSX", kind: "code" },
   ".txt": { language: "Text", kind: "text" },
   ".yaml": { language: "YAML", kind: "hash-comment" },
   ".yml": { language: "YAML", kind: "hash-comment" },
+  ".zsh": { language: "Shell", kind: "hash-comment" },
+};
+
+const LANGUAGE_BY_BASENAME: Record<string, LanguageDefinition> = {
+  capfile: { language: "Ruby", kind: "hash-comment" },
+  gemfile: { language: "Ruby", kind: "hash-comment" },
+  guardfile: { language: "Ruby", kind: "hash-comment" },
+  rakefile: { language: "Ruby", kind: "hash-comment" },
 };
 
 export async function collectRepoLineStats(rootPath: string): Promise<RepoLineStats> {
@@ -187,6 +225,12 @@ export function languageDefinitionForPath(filePath: string) {
     return LANGUAGE_BY_EXTENSION[".env"];
   }
 
+  const basename = path.basename(normalized);
+  const basenameDefinition = LANGUAGE_BY_BASENAME[basename];
+  if (basenameDefinition) {
+    return basenameDefinition;
+  }
+
   return LANGUAGE_BY_EXTENSION[path.extname(normalized)] ?? null;
 }
 
@@ -251,6 +295,9 @@ function countSloc(content: string, kind: LanguageKind) {
   if (kind === "code") {
     return countCodeSloc(content);
   }
+  if (kind === "pascal") {
+    return countPascalSloc(content);
+  }
   if (kind === "hash-comment") {
     return splitContentLines(content).filter((line) => {
       const trimmed = line.trim();
@@ -308,6 +355,95 @@ function countCodeSloc(content: string) {
         hasCode = true;
       }
       break;
+    }
+
+    if (hasCode) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function countPascalSloc(content: string) {
+  let inBraceComment = false;
+  let inParenComment = false;
+  let count = 0;
+
+  for (const line of splitContentLines(content)) {
+    let text = line.trim();
+    let hasCode = false;
+
+    while (text) {
+      if (inBraceComment) {
+        const end = text.indexOf("}");
+        if (end < 0) {
+          text = "";
+          break;
+        }
+        text = text.slice(end + 1).trim();
+        inBraceComment = false;
+        continue;
+      }
+
+      if (inParenComment) {
+        const end = text.indexOf("*)");
+        if (end < 0) {
+          text = "";
+          break;
+        }
+        text = text.slice(end + 2).trim();
+        inParenComment = false;
+        continue;
+      }
+
+      if (text.startsWith("//")) {
+        break;
+      }
+
+      const lineComment = text.indexOf("//");
+      const braceComment = text.indexOf("{");
+      const parenComment = text.indexOf("(*");
+      const commentStarts = [
+        lineComment >= 0 ? lineComment : Number.POSITIVE_INFINITY,
+        braceComment >= 0 ? braceComment : Number.POSITIVE_INFINITY,
+        parenComment >= 0 ? parenComment : Number.POSITIVE_INFINITY,
+      ];
+      const firstComment = Math.min(...commentStarts);
+
+      if (!Number.isFinite(firstComment)) {
+        if (text) {
+          hasCode = true;
+        }
+        break;
+      }
+
+      if (firstComment > 0 && text.slice(0, firstComment).trim()) {
+        hasCode = true;
+      }
+
+      if (firstComment === lineComment) {
+        break;
+      }
+
+      if (firstComment === braceComment) {
+        const end = text.indexOf("}", braceComment + 1);
+        if (end < 0) {
+          inBraceComment = true;
+          text = "";
+          break;
+        }
+        text = text.slice(end + 1).trim();
+        continue;
+      }
+
+      const end = text.indexOf("*)", parenComment + 2);
+      if (end < 0) {
+        inParenComment = true;
+        text = "";
+        break;
+      }
+      text = text.slice(end + 2).trim();
     }
 
     if (hasCode) {

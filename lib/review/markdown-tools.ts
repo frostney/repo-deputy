@@ -5,8 +5,22 @@ export const MARKDOWN_LINK_CHECK_TOOL_ID = "markdown-link-check";
 
 export const MARKDOWNLINT_COMMAND =
   'bunx --silent markdownlint-cli2 "**/*.{md,mdx}" "#node_modules" "#.git" "#.next" "#dist" "#coverage"';
-export const MARKDOWN_LINK_CHECK_COMMAND =
-  "bunx --silent markdown-link-check . -q -i node_modules -i .git -i .next -i dist -i coverage";
+export const MARKDOWN_LINK_CHECK_COMMAND = String.raw`bash <<'REPO_DEPUTY_MARKDOWN_LINK_CHECK'
+status=0
+found=0
+while IFS= read -r -d '' file; do
+  found=1
+  bunx --silent markdown-link-check "$file" -q || status=1
+done < <(
+  find . \
+    \( -type d \( -name node_modules -o -name .git -o -name .next -o -name dist -o -name coverage \) -prune \) \
+    -o \( -name '*.md' -o -name '*.mdx' \) -type f -print0
+)
+if [ "$found" -eq 0 ]; then
+  echo "No Markdown files found."
+fi
+exit "$status"
+REPO_DEPUTY_MARKDOWN_LINK_CHECK`;
 
 type CommandOutput = {
   command: string;
@@ -120,35 +134,23 @@ export function parseMarkdownlintIssues(output: string): ToolCheckIssue[] {
 }
 
 export function parseMarkdownLinkCheckIssues(output: string): ToolCheckIssue[] {
-  const lines = output.split(/\r?\n/);
   const issues: ToolCheckIssue[] = [];
-  let currentFile = "";
 
-  for (const line of lines) {
-    const fileMatch = line.match(/ERROR:\s+\d+\s+dead links?\s+found in (.+?) !/);
-    if (fileMatch) {
-      currentFile = normalizePath(fileMatch[1]);
-      continue;
-    }
+  const fileHeaders = [
+    ...output.matchAll(/ERROR:\s+\d+\s+dead links?\s+found in (.+?) !/g),
+  ];
+  for (const [index, fileMatch] of fileHeaders.entries()) {
+    const currentFile = normalizePath(fileMatch[1]);
+    const start = fileMatch.index ?? 0;
+    const end = fileHeaders[index + 1]?.index ?? output.length;
+    issues.push(...markdownLinkIssuesForFile(currentFile, output.slice(start, end)));
+  }
 
-    const linkMatch = line.match(/\[.\]\s+(.+?)\s+(?:→|->)\s+Status:\s+(.+)$/);
-    if (!linkMatch || !currentFile) {
-      continue;
-    }
-
-    const link = linkMatch[1].trim();
-    const status = linkMatch[2].trim();
-    issues.push({
-      id: `markdown-link-check-${hashText(`${currentFile}:${link}:${status}`)}`,
-      title: "Broken Markdown link",
-      severity: "medium",
-      category: "docs-drift",
-      path: currentFile,
-      message: `${link} returned ${status}.`,
-      evidence: [`File: ${currentFile}`, `Broken link: ${link}`, `Status: ${status}`],
-      suggestedFix:
-        "Update the Markdown link target, add the missing local file, or configure an explicit ignore for an intentionally unavailable URL.",
-    });
+  if (fileHeaders.length === 1) {
+    const currentFile = normalizePath(fileHeaders[0][1]);
+    issues.push(
+      ...markdownLinkIssuesForFile(currentFile, output.slice(0, fileHeaders[0].index)),
+    );
   }
 
   return [...new Map(issues.map((issue) => [issue.id, issue])).values()];
@@ -161,6 +163,28 @@ function normalizeMarkdownLinkCheckOutput(output: CommandOutput): CommandOutput 
     stdout: [...new Set(streams)].join("\n"),
     stderr: "",
   };
+}
+
+function markdownLinkIssuesForFile(filePath: string, output: string): ToolCheckIssue[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.match(/\[.\]\s+(.+?)\s+(?:→|->)\s+Status:\s+(.+)$/))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map((match) => {
+      const link = match[1].trim();
+      const status = match[2].trim();
+      return {
+        id: `markdown-link-check-${hashText(`${filePath}:${link}:${status}`)}`,
+        title: "Broken Markdown link",
+        severity: "medium",
+        category: "docs-drift",
+        path: filePath,
+        message: `${link} returned ${status}.`,
+        evidence: [`File: ${filePath}`, `Broken link: ${link}`, `Status: ${status}`],
+        suggestedFix:
+          "Update the Markdown link target, add the missing local file, or configure an explicit ignore for an intentionally unavailable URL.",
+      };
+    });
 }
 
 function trimOutput(output: CommandOutput) {

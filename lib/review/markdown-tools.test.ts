@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parseMarkdownLinkCheckIssues, parseMarkdownlintIssues } from "./markdown-tools";
+import {
+  buildMarkdownLinkCheckToolResult,
+  parseMarkdownLinkCheckIssues,
+  parseMarkdownlintIssues,
+} from "./markdown-tools";
 
 describe("parseMarkdownlintIssues", () => {
   test("parses markdownlint-cli2 diagnostic lines", () => {
@@ -29,6 +33,27 @@ describe("parseMarkdownLinkCheckIssues", () => {
       title: "Broken Markdown link",
       path: "docs/setup.md",
       message: "./missing.md returned 400.",
+    });
+  });
+
+  test("deduplicates diagnostics repeated across stdout and stderr", () => {
+    const output = `
+  ERROR: 1 dead link found in docs/setup.md !
+  [x] ./missing.md -> Status: 400
+`;
+    const result = buildMarkdownLinkCheckToolResult({
+      command: "markdown-link-check",
+      exitCode: 1,
+      stdout: output,
+      stderr: output,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.issues).toHaveLength(1);
+    expect(result.output).toMatchObject({
+      stdout: output.trim(),
+      stderr: "",
+      truncated: false,
     });
   });
 });

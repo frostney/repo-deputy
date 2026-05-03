@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CATEGORIES,
   type CategoryRow,
@@ -25,17 +25,21 @@ const TABS = ["All", "Drift", "Duplication", "Cycles", "Complexity", "Docs"];
 export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState("All");
-  const liveFindings = scanResult ? scanResult.findings.map(toDashboardFinding) : null;
+  const liveFindings = scanResult
+    ? scanResult.findings.map((finding) => toDashboardFinding(finding, scanResult, repo))
+    : null;
   const findings = scanResult ? (liveFindings ?? []) : FINDINGS;
   const categories = scanResult ? categoriesFromFindings(findings) : CATEGORIES;
   const overall = scanResult ? scoreFromConfidence(scanResult.mergeConfidence) : 76;
-  const source = sourceLabel(scanResult);
+  const lineStats = scanResult?.lineStats;
   const criticalCount = findings.filter(
     (finding) => finding.severity === "critical" || finding.severity === "high",
   ).length;
-  const summaryRows = scanResult
+  const summaryRows: Array<{ label: string; value: ReactNode }> = scanResult
     ? [
-        { label: "Source", value: source },
+        { label: "Language", value: lineStats?.prominentLanguage ?? "Unknown" },
+        { label: "LOC", value: formatCount(lineStats?.loc) },
+        { label: "SLOC", value: formatCount(lineStats?.sloc) },
         { label: "Files scanned", value: scanResult.scannedFiles.toLocaleString() },
         { label: "Findings", value: String(scanResult.findings.length) },
         {
@@ -47,8 +51,9 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
     : [
         { label: "Branch", value: <code className="code-pill">canary</code> },
         { label: "Commit", value: <code className="code-pill">9f4e21a</code> },
-        { label: "Lines of code", value: "412,887" },
-        { label: "Languages", value: "TS · JS · MDX" },
+        { label: "Language", value: "TypeScript" },
+        { label: "LOC", value: "412,887" },
+        { label: "SLOC", value: "318,204" },
         { label: "Auto-fixable", value: <span className="text-sage-warm">31 / 52</span> },
       ];
 
@@ -93,14 +98,17 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
             </h2>
             <div className="mt-1 flex flex-wrap gap-5 font-[family-name:var(--font-mono)] text-xs text-text-mute max-lg:justify-center">
               <span>
-                Source: <strong className="font-medium text-text">{source}</strong>
-              </span>
-              <span>
                 <strong className="font-medium text-text">{findings.length}</strong>{" "}
                 findings
               </span>
               <span>
                 <strong className="font-medium text-text">{criticalCount}</strong> high
+              </span>
+              <span>
+                <strong className="font-medium text-text">
+                  {lineStats?.prominentLanguage ?? "Mixed"}
+                </strong>{" "}
+                primary language
               </span>
               <span>
                 <strong className="font-medium text-text">
@@ -218,9 +226,6 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                     <div className="text-sm font-medium text-text">
                       <CodeText>{f.title}</CodeText>
                     </div>
-                    <div className="mt-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-mute">
-                      {f.path}
-                    </div>
                   </div>
                   <span className="rounded border border-line px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
                     {f.category}
@@ -247,6 +252,22 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                         <CodeText>{f.description}</CodeText>
                       </p>
                     </div>
+                    {f.files?.length ? (
+                      <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                        <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                          Files
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {f.files.map((file) => (
+                            <FileLink
+                              key={file}
+                              path={file}
+                              href={repoFileUrl(scanResult, repo, file)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     {f.evidence?.length ? (
                       <div className="rounded-md border border-line-soft bg-ink-2 p-4">
                         <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
@@ -353,6 +374,39 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                   </span>
                 </div>
               ))}
+              {lineStats?.languages.length ? (
+                <details className="mt-2 border-t border-line-soft pt-2">
+                  <summary className="flex cursor-pointer items-center justify-between py-2 font-[family-name:var(--font-mono)] text-[12px] text-text-soft marker:text-text-mute hover:text-text">
+                    Language breakdown
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-text-mute">
+                      LOC / SLOC
+                    </span>
+                  </summary>
+                  <div className="mt-1 grid gap-1.5">
+                    {lineStats.languages.map((language) => (
+                      <div
+                        key={language.language}
+                        className="grid grid-cols-[1fr_auto] gap-3 rounded border border-line-soft bg-ink-3 px-2.5 py-2 text-[11px]"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-text">
+                            {language.language}
+                          </div>
+                          <div className="font-[family-name:var(--font-mono)] text-text-mute">
+                            {language.files.toLocaleString()} files
+                          </div>
+                        </div>
+                        <div className="text-right font-[family-name:var(--font-mono)] text-text">
+                          <div>{language.loc.toLocaleString()}</div>
+                          <div className="text-text-mute">
+                            {language.sloc.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </div>
 
             {scanResult?.toolResults.length ? (
@@ -408,7 +462,31 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
   );
 }
 
-function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
+function FileLink({ path, href }: { path: string; href: string | null }) {
+  const className =
+    "inline-flex max-w-full items-center gap-1.5 rounded border border-line bg-ink-3 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft hover:border-text-mute hover:text-text";
+
+  if (!href) {
+    return (
+      <code className="max-w-full truncate rounded border border-line bg-ink-3 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
+        {path}
+      </code>
+    );
+  }
+
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={className}>
+      <code className="truncate">{path}</code>
+      <Icon name="external" size={11} />
+    </a>
+  );
+}
+
+function toDashboardFinding(
+  finding: ScanResult["findings"][number],
+  scanResult: ScanResult,
+  repo: string,
+): Finding {
   const category = dashboardCategoryForFinding(finding);
   return {
     id: finding.id,
@@ -419,28 +497,83 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
     description: finding.summary,
     evidence: finding.evidence,
     files: finding.files,
+    sources: finding.sources?.map((source) => {
+      const url = repoFileUrl(scanResult, repo, source.path, source.line);
+      return url ? { ...source, url } : source;
+    }),
     suggestedFix: finding.suggestedFix,
     impact: finding.severity === "high" ? "high" : finding.severity,
     effort: "medium",
   };
 }
 
-function sourceLabel(scanResult: ScanResult | null) {
-  if (!scanResult) {
-    return "Sandbox";
+function repoFileUrl(
+  scanResult: ScanResult | null,
+  repo: string,
+  filePath: string,
+  line?: number,
+) {
+  const githubBase = githubBlobBase(scanResult, repo);
+  const suffix = line ? `#L${line}` : "";
+  if (githubBase) {
+    return `${githubBase}/${encodeRepoPath(filePath)}${suffix}`;
   }
 
-  if (
-    scanResult.repoUrl ||
-    scanResult.toolResults.some(
-      (tool) => tool.id === "sandbox" || tool.id === "git-clone",
-    )
-  ) {
-    return "Sandbox";
+  if (scanResult?.rootPath) {
+    const root = scanResult.rootPath.replace(/\/+$/, "");
+    return `file://${root}/${encodeRepoPath(filePath)}${suffix}`;
   }
 
-  return "Local";
+  return null;
 }
+
+function githubBlobBase(scanResult: ScanResult | null, repo: string) {
+  const repoUrl = scanResult?.repoUrl ?? (isGitHubShorthand(repo) ? repo : "");
+  const webBase = githubWebBase(repoUrl);
+  if (!webBase) {
+    return null;
+  }
+
+  const ref = scanResult?.sandbox?.commit ?? scanResult?.sandbox?.revision ?? "HEAD";
+  return `${webBase}/blob/${encodeURIComponent(ref)}`;
+}
+
+function githubWebBase(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  if (isGitHubShorthand(value)) {
+    return `https://github.com/${value}`;
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.hostname !== "github.com") {
+      return null;
+    }
+    const repoPath = url.pathname.replace(/^\/|\/$|\.git$/g, "");
+    return repoPath ? `https://github.com/${repoPath}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function isGitHubShorthand(value: string) {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
+}
+
+function encodeRepoPath(filePath: string) {
+  return filePath
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+function formatCount(value: number | undefined) {
+  return typeof value === "number" ? value.toLocaleString() : "Unknown";
+}
+
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   return TABS.filter((tab) => tab !== "All").map((key) => {
     const issues = findings.filter((finding) => finding.category === key);

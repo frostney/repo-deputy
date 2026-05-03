@@ -55,15 +55,16 @@ export function buildMarkdownlintToolResult(output: CommandOutput): ToolCheckRes
 }
 
 export function buildMarkdownLinkCheckToolResult(output: CommandOutput): ToolCheckResult {
-  const issues = parseMarkdownLinkCheckIssues(`${output.stdout}\n${output.stderr}`);
-  const erroredWithoutIssues = output.exitCode !== 0 && issues.length === 0;
+  const normalizedOutput = normalizeMarkdownLinkCheckOutput(output);
+  const issues = parseMarkdownLinkCheckIssues(normalizedOutput.stdout);
+  const erroredWithoutIssues = normalizedOutput.exitCode !== 0 && issues.length === 0;
 
   return {
     id: MARKDOWN_LINK_CHECK_TOOL_ID,
     name: "markdown-link-check",
-    command: output.command,
+    command: normalizedOutput.command,
     status: erroredWithoutIssues ? "error" : issues.length ? "failed" : "passed",
-    exitCode: output.exitCode,
+    exitCode: normalizedOutput.exitCode,
     summary: erroredWithoutIssues
       ? "markdown-link-check failed before reporting broken links."
       : issues.length
@@ -80,13 +81,13 @@ export function buildMarkdownLinkCheckToolResult(output: CommandOutput): ToolChe
             severity: "high",
             category: "docs-drift",
             message: "markdown-link-check exited without parseable broken-link output.",
-            evidence: outputEvidence(output),
+            evidence: outputEvidence(normalizedOutput),
             suggestedFix:
               "Run markdown-link-check in the checkout and fix the command or configuration error.",
           },
         ]
       : issues,
-    output: trimOutput(output),
+    output: trimOutput(normalizedOutput),
   };
 }
 
@@ -150,7 +151,16 @@ export function parseMarkdownLinkCheckIssues(output: string): ToolCheckIssue[] {
     });
   }
 
-  return issues;
+  return [...new Map(issues.map((issue) => [issue.id, issue])).values()];
+}
+
+function normalizeMarkdownLinkCheckOutput(output: CommandOutput): CommandOutput {
+  const streams = [output.stdout.trim(), output.stderr.trim()].filter(Boolean);
+  return {
+    ...output,
+    stdout: [...new Set(streams)].join("\n"),
+    stderr: "",
+  };
 }
 
 function trimOutput(output: CommandOutput) {

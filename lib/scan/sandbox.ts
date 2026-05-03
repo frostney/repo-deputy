@@ -12,7 +12,9 @@ import {
   MARKDOWNLINT_COMMAND,
 } from "@/lib/review/markdown-tools";
 import type {
+  FindingSourceExcerpt,
   Finding,
+  RepoLineStats,
   RepoScanInput,
   RepoScanResult,
   ReviewContext,
@@ -85,7 +87,7 @@ export async function runSandboxRepoScan(
 
       const metadata = await runSandboxCommand(
         sandbox,
-        "git rev-parse --short HEAD && git ls-files | wc -l",
+        buildSandboxMetadataCommand(),
         SANDBOX_REPO_DIR,
       );
       applySandboxMetadata(context, metadata.stdout);
@@ -114,6 +116,10 @@ export async function runSandboxRepoScan(
         ),
       ];
       context.toolResults.push(...toolResults);
+      context.sourceExcerpts = await collectSandboxSourceExcerpts(
+        sandbox,
+        context.toolResults,
+      );
     } finally {
       await sandbox.stop({ blocking: false }).catch(() => undefined);
     }
@@ -225,6 +231,256 @@ function buildGitCloneCommand(locator: RepoLocator, input: RepoScanInput) {
   return `rm -rf ${shellQuote(SANDBOX_REPO_DIR)} && GIT_TERMINAL_PROMPT=0 timeout 180s git clone --depth=${CLONE_DEPTH} --filter=blob:none${branchArgs} ${shellQuote(
     locator.repoUrl,
   )} ${shellQuote(SANDBOX_REPO_DIR)}`;
+}
+
+function buildSandboxMetadataCommand() {
+  return String.raw`node <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const languages = {
+  ".cjs": { language: "JavaScript", kind: "code" },
+  ".css": { language: "CSS", kind: "code" },
+  ".env": { language: "Environment", kind: "hash-comment" },
+  ".js": { language: "JavaScript", kind: "code" },
+  ".json": { language: "JSON", kind: "text" },
+  ".jsx": { language: "JavaScript JSX", kind: "code" },
+  ".md": { language: "Markdown", kind: "text" },
+  ".mdx": { language: "MDX", kind: "text" },
+  ".mjs": { language: "JavaScript", kind: "code" },
+  ".ts": { language: "TypeScript", kind: "code" },
+  ".tsx": { language: "TypeScript TSX", kind: "code" },
+  ".txt": { language: "Text", kind: "text" },
+  ".yaml": { language: "YAML", kind: "hash-comment" },
+  ".yml": { language: "YAML", kind: "hash-comment" },
+};
+
+function languageForPath(filePath) {
+  const normalized = filePath.toLowerCase();
+  if (normalized === ".env.example") return languages[".env"];
+  return languages[path.extname(normalized)] || null;
+}
+
+function splitLines(content) {
+  if (!content) return [];
+  const lines = content.split(/\r\n|\r|\n/);
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+function countCodeSloc(content) {
+  let inBlock = false;
+  let count = 0;
+  for (const line of splitLines(content)) {
+    let text = line.trim();
+    let hasCode = false;
+    while (text) {
+      if (inBlock) {
+        const end = text.indexOf("*/");
+        if (end < 0) {
+          text = "";
+          break;
+        }
+        text = text.slice(end + 2).trim();
+        inBlock = false;
+        continue;
+      }
+      if (text.startsWith("//")) break;
+      const lineComment = text.indexOf("//");
+      const blockComment = text.indexOf("/*");
+      if (blockComment >= 0 && (lineComment < 0 || blockComment < lineComment)) {
+        if (text.slice(0, blockComment).trim()) hasCode = true;
+        const end = text.indexOf("*/", blockComment + 2);
+        if (end < 0) {
+          inBlock = true;
+          text = "";
+          break;
+        }
+        text = text.slice(end + 2).trim();
+        continue;
+      }
+      const code = lineComment >= 0 ? text.slice(0, lineComment).trim() : text;
+      if (code) hasCode = true;
+      break;
+    }
+    if (hasCode) count += 1;
+  }
+  return count;
+}
+
+function countSloc(content, kind) {
+  if (kind === "code") return countCodeSloc(content);
+  if (kind === "hash-comment") {
+    return splitLines(content).filter((line) => {
+      const trimmed = line.trim();
+      return trimmed && !trimmed.startsWith("#");
+    }).length;
+  }
+  return splitLines(content).filter((line) => line.trim()).length;
+}
+
+const commit = cp.execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+  encoding: "utf8",
+}).trim();
+const paths = cp.execFileSync("git", ["ls-files"], { encoding: "utf8" })
+  .split(/\r?\n/)
+  .filter(Boolean);
+const byLanguage = new Map();
+
+for (const filePath of paths) {
+  const definition = languageForPath(filePath);
+  if (!definition) continue;
+  let stats;
+  try {
+    stats = fs.statSync(filePath);
+  } catch {
+    continue;
+  }
+  if (!stats.isFile() || stats.size > 1000000) continue;
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    continue;
+  }
+  if (content.includes("\0")) continue;
+  const loc = splitLines(content).length;
+  const sloc = countSloc(content, definition.kind);
+  const existing =
+    byLanguage.get(definition.language) ||
+    { language: definition.language, files: 0, loc: 0, sloc: 0 };
+  existing.files += 1;
+  existing.loc += loc;
+  existing.sloc += sloc;
+  byLanguage.set(definition.language, existing);
+}
+
+const rows = [...byLanguage.values()].sort(
+  (a, b) => b.sloc - a.sloc || b.loc - a.loc || a.language.localeCompare(b.language),
+);
+
+console.log(
+  JSON.stringify({
+    commit,
+    scannedFiles: paths.length,
+    lineStats: {
+      files: rows.reduce((sum, entry) => sum + entry.files, 0),
+      loc: rows.reduce((sum, entry) => sum + entry.loc, 0),
+      sloc: rows.reduce((sum, entry) => sum + entry.sloc, 0),
+      prominentLanguage: rows[0]?.language || null,
+      languages: rows,
+    },
+  }),
+);
+NODE`;
+}
+
+async function collectSandboxSourceExcerpts(
+  sandbox: Sandbox,
+  results: ToolCheckResult[],
+): Promise<FindingSourceExcerpt[]> {
+  const requests = sourceRequestsFromToolResults(results);
+  if (requests.length === 0) {
+    return [];
+  }
+
+  const output = await runSandboxCommand(
+    sandbox,
+    buildSandboxSourceExcerptCommand(requests),
+    SANDBOX_REPO_DIR,
+  );
+
+  if (output.exitCode !== 0) {
+    return [];
+  }
+
+  return parseSourceExcerpts(output.stdout);
+}
+
+function sourceRequestsFromToolResults(results: ToolCheckResult[]) {
+  const byPath = new Map<string, { path: string; line?: number }>();
+
+  for (const issue of results.flatMap((result) => result.issues)) {
+    if (!issue.path || !isSafeRepoRelativePath(issue.path)) {
+      continue;
+    }
+
+    const existing = byPath.get(issue.path);
+    if (existing) {
+      if (!existing.line && issue.line) {
+        existing.line = issue.line;
+      }
+      continue;
+    }
+
+    byPath.set(issue.path, {
+      path: issue.path,
+      line: issue.line,
+    });
+  }
+
+  return [...byPath.values()].slice(0, 16);
+}
+
+function buildSandboxSourceExcerptCommand(
+  requests: Array<{ path: string; line?: number }>,
+) {
+  return String.raw`repo_deputy_source_requests=${shellQuote(JSON.stringify(requests))} node <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+function splitLines(content) {
+  if (!content) return [];
+  const lines = content.split(/\r\n|\r|\n/);
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+function isSafeRepoRelativePath(filePath) {
+  return (
+    filePath &&
+    !path.isAbsolute(filePath) &&
+    !filePath.split(/[\\/]+/).includes("..") &&
+    !filePath.includes("\0")
+  );
+}
+
+const requests = JSON.parse(process.env.repo_deputy_source_requests || "[]");
+const excerpts = [];
+
+for (const request of requests.slice(0, 16)) {
+  const filePath = String(request.path || "");
+  if (!isSafeRepoRelativePath(filePath)) continue;
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    continue;
+  }
+  if (content.includes("\0")) continue;
+  const lines = splitLines(content);
+  const requestedLine = Number(request.line);
+  const line =
+    Number.isFinite(requestedLine) && requestedLine > 0
+      ? Math.min(Math.floor(requestedLine), Math.max(lines.length, 1))
+      : 1;
+  const startLine = Math.max(1, line - 6);
+  const endLine = Math.min(lines.length, line + 6);
+  excerpts.push({
+    path: filePath,
+    line,
+    startLine,
+    endLine,
+    lines: lines.slice(startLine - 1, endLine).map((text, index) => ({
+      number: startLine + index,
+      text,
+    })),
+  });
+}
+
+console.log(JSON.stringify(excerpts));
+NODE`;
 }
 
 function buildGitCloneResult(
@@ -356,6 +612,20 @@ async function buildSandboxScanResult(
 }
 
 function applySandboxMetadata(context: ReviewContext, stdout: string) {
+  const parsed = parseSandboxMetadata(stdout);
+  if (parsed) {
+    if (context.sandbox && parsed.commit) {
+      context.sandbox.commit = parsed.commit;
+    }
+    if (typeof parsed.scannedFiles === "number" && parsed.scannedFiles > 0) {
+      context.scannedFiles = parsed.scannedFiles;
+    }
+    if (parsed.lineStats) {
+      context.lineStats = parsed.lineStats;
+    }
+    return;
+  }
+
   const [commit, files] = stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -369,6 +639,115 @@ function applySandboxMetadata(context: ReviewContext, stdout: string) {
   if (Number.isFinite(scannedFiles) && scannedFiles > 0) {
     context.scannedFiles = scannedFiles;
   }
+}
+
+function parseSandboxMetadata(stdout: string) {
+  try {
+    const value = JSON.parse(stdout.trim()) as {
+      commit?: unknown;
+      scannedFiles?: unknown;
+      lineStats?: unknown;
+    };
+    return {
+      commit: typeof value.commit === "string" ? value.commit : undefined,
+      scannedFiles:
+        typeof value.scannedFiles === "number" ? value.scannedFiles : undefined,
+      lineStats: parseLineStats(value.lineStats),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseLineStats(value: unknown): RepoLineStats | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const languages = Array.isArray(record.languages)
+    ? record.languages
+        .map((entry) =>
+          entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null,
+        )
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => ({
+          language: typeof entry.language === "string" ? entry.language : "",
+          files: numberValue(entry.files),
+          loc: numberValue(entry.loc),
+          sloc: numberValue(entry.sloc),
+        }))
+        .filter(
+          (
+            entry,
+          ): entry is { language: string; files: number; loc: number; sloc: number } =>
+            Boolean(entry.language) &&
+            entry.files !== undefined &&
+            entry.loc !== undefined &&
+            entry.sloc !== undefined,
+        )
+    : [];
+
+  return {
+    files:
+      numberValue(record.files) ?? languages.reduce((sum, row) => sum + row.files, 0),
+    loc: numberValue(record.loc) ?? languages.reduce((sum, row) => sum + row.loc, 0),
+    sloc: numberValue(record.sloc) ?? languages.reduce((sum, row) => sum + row.sloc, 0),
+    prominentLanguage:
+      typeof record.prominentLanguage === "string" ? record.prominentLanguage : null,
+    languages,
+  };
+}
+
+function parseSourceExcerpts(stdout: string): FindingSourceExcerpt[] {
+  try {
+    const value = JSON.parse(stdout.trim()) as unknown;
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((entry) =>
+        entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null,
+      )
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+      .map((entry) => {
+        const lines = Array.isArray(entry.lines)
+          ? entry.lines
+              .map((line) =>
+                line && typeof line === "object"
+                  ? (line as Record<string, unknown>)
+                  : null,
+              )
+              .filter((line): line is Record<string, unknown> => Boolean(line))
+              .map((line) => ({
+                number: numberValue(line.number) ?? 0,
+                text: typeof line.text === "string" ? line.text : "",
+              }))
+              .filter((line) => line.number > 0)
+          : [];
+
+        return {
+          path: typeof entry.path === "string" ? entry.path : "",
+          line: numberValue(entry.line),
+          startLine: numberValue(entry.startLine) ?? lines[0]?.number ?? 1,
+          endLine: numberValue(entry.endLine) ?? lines.at(-1)?.number ?? 1,
+          lines,
+        };
+      })
+      .filter((entry) => entry.path && entry.lines.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function isSafeRepoRelativePath(filePath: string) {
+  return (
+    Boolean(filePath) &&
+    !filePath.startsWith("/") &&
+    !filePath.split(/[\\/]+/).includes("..") &&
+    !filePath.includes("\0")
+  );
 }
 
 function toolResultsToFindings(results: ToolCheckResult[]): Finding[] {
@@ -429,6 +808,10 @@ function safeJsonErrorMessage(value: unknown) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function fromOwnerRepo(owner: string, repo: string): RepoLocator {

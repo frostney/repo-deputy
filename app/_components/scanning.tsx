@@ -131,7 +131,7 @@ export function Scanning({ repo, onComplete }: Props) {
           <div className="text-base text-text-soft">
             {scanDone
               ? scanResult?.summary
-              : "Starting an isolated shallow checkout and analyzer run."}
+              : "Starting an isolated shallow checkout and audit run."}
           </div>
         </div>
 

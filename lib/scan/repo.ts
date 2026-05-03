@@ -8,6 +8,7 @@ import { runDocsDriftChecks } from "@/lib/review/docs-drift";
 import { runFallowAnalysis } from "@/lib/review/fallow";
 import { buildFallbackReport, generateDeputyReport } from "@/lib/review/generate-report";
 import { runMarkdownDuplicationChecks } from "@/lib/review/markdown-duplication";
+import { collectRepoLineStats } from "@/lib/scan/line-stats";
 import { runSandboxRepoScan } from "@/lib/scan/sandbox";
 import type {
   ChangedFile,
@@ -81,7 +82,10 @@ export async function collectRepoScanContext(
   const rootPath = path.resolve(
     /*turbopackIgnore: true*/ input.rootPath ?? process.cwd(),
   );
-  const files = await readRepoFiles(rootPath);
+  const [files, lineStats] = await Promise.all([
+    readRepoFiles(rootPath),
+    collectRepoLineStats(rootPath),
+  ]);
   const repoName = path.basename(rootPath);
   const repo = `local/${repoName}`;
   const packageJson = findFile(files, "package.json");
@@ -105,6 +109,7 @@ export async function collectRepoScanContext(
     envExample,
     memoryInsights: [],
     toolResults: [],
+    lineStats,
     runExternalTools: input.runExternalTools,
   };
 }

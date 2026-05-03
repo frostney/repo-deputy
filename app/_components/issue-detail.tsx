@@ -2,6 +2,12 @@
 
 import { useEffect } from "react";
 import type { Finding } from "./data";
+import {
+  EvidenceItem,
+  EvidenceMeter,
+  type EvidenceFileRef,
+  evidenceMetricsForFinding,
+} from "./evidence";
 import { CodeText, Icon } from "./icons";
 
 type Props = {
@@ -12,12 +18,7 @@ type Props = {
 
 export function IssueDetail({ issue, onClose, onPropose }: Props) {
   const evidence = issue.evidence ?? [];
-  const files = issue.files?.length
-    ? issue.files
-    : issue.path
-        .split(" · ")
-        .map((path) => path.trim())
-        .filter(Boolean);
+  const evidenceMetrics = evidenceMetricsForFinding(issue);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -26,10 +27,6 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
-
-  const sourceUrlByPath = new Map(
-    issue.sources?.map((source) => [source.path, source.url]) ?? [],
-  );
 
   return (
     <div
@@ -60,6 +57,9 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
             <h2 className="m-0 font-[family-name:var(--font-serif)] text-[28px] font-medium leading-[1.15] tracking-[-0.02em] [font-variation-settings:'opsz'_96,'SOFT'_50,'WONK'_1]">
               <CodeText>{issue.title}</CodeText>
             </h2>
+            <div className="mt-3">
+              <EvidenceMeter metrics={evidenceMetrics} />
+            </div>
           </div>
           <button
             type="button"
@@ -81,25 +81,17 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
               <Section title="Evidence">
                 <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
                   {evidence.map((item) => (
-                    <div
+                    <EvidenceItem
                       key={item}
-                      className="border-b border-line-soft px-3.5 py-2.5 last:border-b-0"
-                    >
-                      <CodeText>{item}</CodeText>
-                    </div>
+                      finding={issue}
+                      text={item}
+                      hrefForRef={(ref) => evidenceRefUrl(issue, ref)}
+                      showSource
+                    />
                   ))}
                 </div>
               </Section>
             )}
-            {issue.sources?.length ? (
-              <Section title="Source">
-                <div className="grid gap-2.5">
-                  {issue.sources.map((source) => (
-                    <SourceExcerpt key={source.path} source={source} />
-                  ))}
-                </div>
-              </Section>
-            ) : null}
             <Section title="Why it matters">
               <p className="m-0 text-pretty text-sm leading-[1.6] text-text-soft">
                 {impactText(issue)}
@@ -126,18 +118,13 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 ? `${Math.round(issue.confidence * 100)}%`
                 : "heuristic"}
             </AsideRow>
+            <AsideRow label="Evidence strength">
+              {evidenceMetrics.score} · {evidenceMetrics.label}
+            </AsideRow>
+            <AsideRow label="Evidence items">{evidenceMetrics.items}</AsideRow>
+            <AsideRow label="Source lines">{evidenceMetrics.sourceLines}</AsideRow>
             <AsideRow label="Impact">{issue.impact}</AsideRow>
             <AsideRow label="Effort">{issue.effort}</AsideRow>
-            <div className="flex flex-col gap-1">
-              <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                Files affected
-              </span>
-              <div className="flex flex-col gap-1">
-                {files.map((f) => (
-                  <IssueFileLink key={f} path={f} href={sourceUrlByPath.get(f) ?? null} />
-                ))}
-              </div>
-            </div>
           </aside>
         </div>
 
@@ -169,58 +156,24 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
   );
 }
 
-function SourceExcerpt({ source }: { source: NonNullable<Finding["sources"]>[number] }) {
-  return (
-    <details className="overflow-hidden rounded-md border border-line-soft bg-ink-2">
-      <summary className="flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 text-[12px] text-text-soft marker:text-text-mute hover:text-text">
-        <IssueFileLink path={source.path} href={source.url ?? null} />
-        <span className="shrink-0 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.12em] text-text-mute">
-          lines {source.startLine}-{source.endLine}
-        </span>
-      </summary>
-      <pre className="m-0 max-h-[320px] overflow-auto border-t border-line-soft bg-ink px-0 py-2 font-[family-name:var(--font-mono)] text-[11px] leading-[1.6] text-text-soft">
-        {source.lines.map((line) => (
-          <span
-            key={line.number}
-            className={`block px-3.5 ${
-              source.line === line.number ? "bg-gold/10 text-text" : ""
-            }`}
-          >
-            <span className="mr-3 inline-block w-8 select-none text-right text-text-mute">
-              {line.number}
-            </span>
-            <span>{line.text || " "}</span>
-          </span>
-        ))}
-      </pre>
-    </details>
-  );
-}
-
-function IssueFileLink({ path, href }: { path: string; href: string | null }) {
-  const className =
-    "inline-flex max-w-full items-center gap-1.5 rounded bg-ink-2 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft hover:text-text";
-
-  if (!href) {
-    return (
-      <code className="max-w-full truncate rounded bg-ink-2 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
-        {path}
-      </code>
-    );
+function evidenceRefUrl(issue: Finding, ref: EvidenceFileRef) {
+  const source = issue.sources?.find((item) => item.path === ref.path);
+  if (!source?.url) {
+    return null;
   }
 
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={className}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <code className="truncate">{path}</code>
-      <Icon name="external" size={11} />
-    </a>
-  );
+  const line = ref.line ?? source.line ?? source.startLine;
+  const endLine = ref.endLine ?? (ref.line ? undefined : source.endLine);
+  return replaceLineHash(source.url, line, endLine);
+}
+
+function replaceLineHash(url: string, line?: number, endLine?: number) {
+  if (!line) {
+    return url;
+  }
+
+  const [base] = url.split("#");
+  return `${base}#L${line}${endLine && endLine !== line ? `-L${endLine}` : ""}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

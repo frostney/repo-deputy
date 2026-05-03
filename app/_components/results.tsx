@@ -8,6 +8,13 @@ import {
   FINDINGS,
   type ScanResult,
 } from "./data";
+import {
+  EvidenceItem,
+  EvidenceMeter,
+  evidenceMetricsForFinding,
+  type EvidenceFileRef,
+  weightedFindingPenalty,
+} from "./evidence";
 import { CodeText, Icon } from "./icons";
 import { dashboardCategoryForFinding } from "./pr-data";
 import { ScoreRing } from "./score-ring";
@@ -30,7 +37,7 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
     : null;
   const findings = scanResult ? (liveFindings ?? []) : FINDINGS;
   const categories = scanResult ? categoriesFromFindings(findings) : CATEGORIES;
-  const overall = scanResult ? scoreFromConfidence(scanResult.mergeConfidence) : 76;
+  const overall = scanResult ? scoreFromFindings(scanResult, findings) : 76;
   const lineStats = scanResult?.lineStats;
   const criticalCount = findings.filter(
     (finding) => finding.severity === "critical" || finding.severity === "high",
@@ -213,142 +220,104 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                 ))}
               </div>
             </div>
-            {filtered.map((f) => (
-              <div
-                key={f.id}
-                className={`border-b border-line-soft transition-colors last:border-b-0 ${
-                  expanded === f.id ? "bg-ink-3" : ""
-                }`}
-              >
-                <div className="grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-4 px-5 py-3.5">
-                  <span className={`pill pill-${f.severity}`}>{f.severity}</span>
-                  <div>
-                    <div className="text-sm font-medium text-text">
-                      <CodeText>{f.title}</CodeText>
+            {filtered.map((f) => {
+              const evidenceMetrics = evidenceMetricsForFinding(f);
+
+              return (
+                <div
+                  key={f.id}
+                  className={`border-b border-line-soft transition-colors last:border-b-0 ${
+                    expanded === f.id ? "bg-ink-3" : ""
+                  }`}
+                >
+                  <div className="grid w-full grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 px-5 py-3.5">
+                    <span className={`pill pill-${f.severity}`}>{f.severity}</span>
+                    <div>
+                      <div className="text-sm font-medium text-text">
+                        <CodeText>{f.title}</CodeText>
+                      </div>
                     </div>
+                    <EvidenceMeter metrics={evidenceMetrics} />
+                    <span className="rounded border border-line px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
+                      {f.category}
+                    </span>
+                    <button
+                      type="button"
+                      aria-expanded={expanded === f.id}
+                      aria-label={`${expanded === f.id ? "Hide" : "Show"} details for ${f.title}`}
+                      onClick={() => setExpanded(expanded === f.id ? null : f.id)}
+                      className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border border-line bg-ink-2 text-text-mute transition hover:bg-ink-4 hover:text-text ${
+                        expanded === f.id ? "rotate-90" : ""
+                      }`}
+                    >
+                      <Icon name="chevron-right" size={14} />
+                    </button>
                   </div>
-                  <span className="rounded border border-line px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
-                    {f.category}
-                  </span>
-                  <button
-                    type="button"
-                    aria-expanded={expanded === f.id}
-                    aria-label={`${expanded === f.id ? "Hide" : "Show"} details for ${f.title}`}
-                    onClick={() => setExpanded(expanded === f.id ? null : f.id)}
-                    className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border border-line bg-ink-2 text-text-mute transition hover:bg-ink-4 hover:text-text ${
-                      expanded === f.id ? "rotate-90" : ""
-                    }`}
-                  >
-                    <Icon name="chevron-right" size={14} />
-                  </button>
-                </div>
-                {expanded === f.id && (
-                  <div className="grid gap-4 px-5 pb-5">
-                    <div className="rounded-md border border-line-soft bg-ink-2 p-4">
-                      <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                        Summary
-                      </div>
-                      <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
-                        <CodeText>{f.description}</CodeText>
-                      </p>
-                    </div>
-                    {f.files?.length ? (
+                  {expanded === f.id && (
+                    <div className="grid gap-4 px-5 pb-5">
                       <div className="rounded-md border border-line-soft bg-ink-2 p-4">
                         <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                          Files
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {f.files.map((file) => (
-                            <FileLink
-                              key={file}
-                              path={file}
-                              href={repoFileUrl(scanResult, repo, file)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {f.evidence?.length ? (
-                      <div className="rounded-md border border-line-soft bg-ink-2 p-4">
-                        <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                          Evidence
-                        </div>
-                        <ul className="m-0 grid list-none gap-1.5 p-0 text-[12px] leading-[1.55] text-text-soft">
-                          {f.evidence.map((item) => (
-                            <li key={item} className="flex gap-2">
-                              <span className="text-gold-warm">-</span>
-                              <span>
-                                <CodeText>{item}</CodeText>
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {f.suggestedFix ? (
-                      <div className="rounded-md border border-line-soft bg-ink-2 p-4">
-                        <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                          Suggested fix
+                          Summary
                         </div>
                         <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
-                          <CodeText>{f.suggestedFix}</CodeText>
+                          <CodeText>{f.description}</CodeText>
                         </p>
                       </div>
-                    ) : null}
-                    {f.id === "f1" && (
-                      <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
-                        <div className="flex justify-between border-b border-line bg-ink-3 px-3.5 py-2 text-[11px] text-text-mute">
-                          <span>router-reducer.ts</span>
-                          <span>line 42</span>
+                      {f.evidence?.length ? (
+                        <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <div className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                              Evidence
+                            </div>
+                            <EvidenceMeter metrics={evidenceMetrics} />
+                          </div>
+                          <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text-soft">
+                            {f.evidence.map((item) => (
+                              <EvidenceItem
+                                key={item}
+                                finding={f}
+                                text={item}
+                                hrefForRef={(ref) =>
+                                  evidenceRefUrl(scanResult, repo, f, ref)
+                                }
+                              />
+                            ))}
+                          </div>
                         </div>
-                        <pre className="m-0 overflow-x-auto whitespace-pre p-3.5">
-                          <span className="block bg-oxblood/15 text-[#F2C9C5]">
-                            <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-                              42
-                            </span>
-                            {
-                              "import { internalRouteCache } from '../../server/internal/route-cache'"
-                            }
-                          </span>
-                          {"\n"}
-                          <span className="block bg-sage/15 text-[#C9DCB7]">
-                            <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-                              42
-                            </span>
-                            {"import type { RouteCacheSnapshot } from '../router-types'"}
-                          </span>
-                          {"\n"}
-                          <span className="block bg-sage/15 text-[#C9DCB7]">
-                            <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-                              43
-                            </span>
-                            {"// Use the public RouteCacheSnapshot contract instead"}
-                          </span>
-                        </pre>
+                      ) : null}
+                      {f.suggestedFix ? (
+                        <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                          <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                            Suggested fix
+                          </div>
+                          <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
+                            <CodeText>{f.suggestedFix}</CodeText>
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-quiet btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenIssue(f);
+                          }}
+                        >
+                          <Icon name="search" size={12} /> Inspect
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm">
+                          <Icon name="git-branch" size={12} /> Suggest fix
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm">
+                          <Icon name="x" size={12} /> Mark as accepted
+                        </button>
                       </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="btn btn-quiet btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenIssue(f);
-                        }}
-                      >
-                        <Icon name="search" size={12} /> Inspect
-                      </button>
-                      <button type="button" className="btn btn-ghost btn-sm">
-                        <Icon name="git-branch" size={12} /> Suggest fix
-                      </button>
-                      <button type="button" className="btn btn-ghost btn-sm">
-                        <Icon name="x" size={12} /> Mark as accepted
-                      </button>
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
             {filtered.length === 0 && (
               <div className="px-5 py-8 text-sm text-text-soft">
                 No findings in this category.
@@ -432,26 +401,6 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
   );
 }
 
-function FileLink({ path, href }: { path: string; href: string | null }) {
-  const className =
-    "inline-flex max-w-full items-center gap-1.5 rounded border border-line bg-ink-3 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft hover:border-text-mute hover:text-text";
-
-  if (!href) {
-    return (
-      <code className="max-w-full truncate rounded border border-line bg-ink-3 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
-        {path}
-      </code>
-    );
-  }
-
-  return (
-    <a href={href} target="_blank" rel="noreferrer" className={className}>
-      <code className="truncate">{path}</code>
-      <Icon name="external" size={11} />
-    </a>
-  );
-}
-
 function toDashboardFinding(
   finding: ScanResult["findings"][number],
   scanResult: ScanResult,
@@ -468,7 +417,13 @@ function toDashboardFinding(
     evidence: finding.evidence,
     files: finding.files,
     sources: finding.sources?.map((source) => {
-      const url = repoFileUrl(scanResult, repo, source.path, source.line);
+      const url = repoFileUrl(
+        scanResult,
+        repo,
+        source.path,
+        source.line ?? source.startLine,
+        source.endLine,
+      );
       return url ? { ...source, url } : source;
     }),
     suggestedFix: finding.suggestedFix,
@@ -483,9 +438,12 @@ function repoFileUrl(
   repo: string,
   filePath: string,
   line?: number,
+  endLine?: number,
 ) {
   const githubBase = githubBlobBase(scanResult, repo);
-  const suffix = line ? `#L${line}` : "";
+  const suffix = line
+    ? `#L${line}${endLine && endLine !== line ? `-L${endLine}` : ""}`
+    : "";
   if (githubBase) {
     return `${githubBase}/${encodeRepoPath(filePath)}${suffix}`;
   }
@@ -496,6 +454,19 @@ function repoFileUrl(
   }
 
   return null;
+}
+
+function evidenceRefUrl(
+  scanResult: ScanResult | null,
+  repo: string,
+  finding: Finding,
+  ref: EvidenceFileRef,
+) {
+  const source = finding.sources?.find((item) => item.path === ref.path);
+  const line = ref.line ?? source?.line ?? source?.startLine;
+  const endLine = ref.endLine ?? (ref.line ? undefined : source?.endLine);
+
+  return repoFileUrl(scanResult, repo, ref.path, line, endLine);
 }
 
 function githubBlobBase(scanResult: ScanResult | null, repo: string) {
@@ -614,14 +585,11 @@ function formatPercent(value: number) {
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   return TABS.filter((tab) => tab !== "All").map((key) => {
     const issues = findings.filter((finding) => finding.category === key);
-    const highCount = issues.filter(
-      (finding) => finding.severity === "critical" || finding.severity === "high",
-    ).length;
-    const mediumCount = issues.filter((finding) => finding.severity === "medium").length;
-    const score = Math.max(
+    const penalty = issues.reduce(
+      (sum, finding) => sum + weightedFindingPenalty(finding),
       0,
-      100 - highCount * 24 - mediumCount * 12 - issues.length * 4,
     );
+    const score = Math.max(0, Math.round(100 - Math.min(90, penalty)));
 
     return {
       key,
@@ -642,14 +610,26 @@ function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   });
 }
 
-function scoreFromConfidence(confidence: ScanResult["mergeConfidence"]) {
-  if (confidence === "safe") {
-    return 92;
+function scoreFromFindings(scanResult: ScanResult, findings: Finding[]) {
+  if (findings.length === 0) {
+    return scanResult.mergeConfidence === "safe" ? 94 : 88;
   }
-  if (confidence === "needs-docs-update") {
-    return 74;
+
+  const penalty = findings.reduce(
+    (sum, finding) => sum + weightedFindingPenalty(finding),
+    0,
+  );
+  const volumePenalty = Math.min(10, Math.max(0, findings.length - 1) * 1.5);
+  const rawScore = Math.round(100 - Math.min(62, penalty) - volumePenalty);
+
+  if (scanResult.mergeConfidence === "needs-human-review") {
+    return Math.max(12, Math.min(72, rawScore));
   }
-  return 48;
+  if (scanResult.mergeConfidence === "needs-docs-update") {
+    return Math.max(28, Math.min(84, rawScore));
+  }
+
+  return Math.max(72, Math.min(96, rawScore));
 }
 
 function verdictLabel(confidence: ScanResult["mergeConfidence"] | undefined) {

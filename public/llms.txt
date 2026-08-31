@@ -1,0 +1,16 @@
+# Repo Deputy
+
+> Repo Deputy is a whole-repository drift scanner that audits public GitHub repositories for duplication, architectural drift, circular dependencies, complexity, and stale documentation, then deputizes a pull request to clean it up.
+
+- Canonical: https://repo-deputy.vercel.app
+- GitHub: https://github.com/frostney/repo-deputy
+
+## What it does
+
+It scans public GitHub repositories for duplication, architectural drift, circular dependencies, complexity, and stale documentation, then deputizes a pull request to clean it up.
+
+Surfaces: a public dashboard and a local stdio MCP server for agent workflows.
+
+## What this is not
+
+This is a whole-repository drift scanner. It is not a generic chat coding assistant.

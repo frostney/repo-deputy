@@ -2,6 +2,12 @@
 
 import { useEffect } from "react";
 import type { Finding } from "./data";
+import {
+  EvidenceItem,
+  EvidenceMeter,
+  type EvidenceFileRef,
+  evidenceMetricsForFinding,
+} from "./evidence";
 import { CodeText, Icon } from "./icons";
 
 type Props = {
@@ -12,12 +18,7 @@ type Props = {
 
 export function IssueDetail({ issue, onClose, onPropose }: Props) {
   const evidence = issue.evidence ?? [];
-  const files = issue.files?.length
-    ? issue.files
-    : issue.path
-        .split(" · ")
-        .map((path) => path.trim())
-        .filter(Boolean);
+  const evidenceMetrics = evidenceMetricsForFinding(issue);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -56,6 +57,9 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
             <h2 className="m-0 font-[family-name:var(--font-serif)] text-[28px] font-medium leading-[1.15] tracking-[-0.02em] [font-variation-settings:'opsz'_96,'SOFT'_50,'WONK'_1]">
               <CodeText>{issue.title}</CodeText>
             </h2>
+            <div className="mt-3">
+              <EvidenceMeter metrics={evidenceMetrics} />
+            </div>
           </div>
           <button
             type="button"
@@ -77,12 +81,13 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
               <Section title="Evidence">
                 <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
                   {evidence.map((item) => (
-                    <div
+                    <EvidenceItem
                       key={item}
-                      className="border-b border-line-soft px-3.5 py-2.5 last:border-b-0"
-                    >
-                      <CodeText>{item}</CodeText>
-                    </div>
+                      finding={issue}
+                      text={item}
+                      hrefForRef={(ref) => evidenceRefUrl(issue, ref)}
+                      showSource
+                    />
                   ))}
                 </div>
               </Section>
@@ -113,23 +118,13 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
                 ? `${Math.round(issue.confidence * 100)}%`
                 : "heuristic"}
             </AsideRow>
+            <AsideRow label="Evidence strength">
+              {evidenceMetrics.score} · {evidenceMetrics.label}
+            </AsideRow>
+            <AsideRow label="Evidence items">{evidenceMetrics.items}</AsideRow>
+            <AsideRow label="Source lines">{evidenceMetrics.sourceLines}</AsideRow>
             <AsideRow label="Impact">{issue.impact}</AsideRow>
             <AsideRow label="Effort">{issue.effort}</AsideRow>
-            <div className="flex flex-col gap-1">
-              <span className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                Files affected
-              </span>
-              <div className="flex flex-col gap-1">
-                {files.map((f) => (
-                  <div
-                    key={f}
-                    className="rounded bg-ink-2 px-2 py-1 font-[family-name:var(--font-mono)] text-[11px] text-text-soft"
-                  >
-                    <code>{f}</code>
-                  </div>
-                ))}
-              </div>
-            </div>
           </aside>
         </div>
 
@@ -159,6 +154,26 @@ export function IssueDetail({ issue, onClose, onPropose }: Props) {
       </div>
     </div>
   );
+}
+
+function evidenceRefUrl(issue: Finding, ref: EvidenceFileRef) {
+  const source = issue.sources?.find((item) => item.path === ref.path);
+  if (!source?.url) {
+    return null;
+  }
+
+  const line = ref.line ?? source.line ?? source.startLine;
+  const endLine = ref.endLine ?? (ref.line ? undefined : source.endLine);
+  return replaceLineHash(source.url, line, endLine);
+}
+
+function replaceLineHash(url: string, line?: number, endLine?: number) {
+  if (!line) {
+    return url;
+  }
+
+  const [base] = url.split("#");
+  return `${base}#L${line}${endLine && endLine !== line ? `-L${endLine}` : ""}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

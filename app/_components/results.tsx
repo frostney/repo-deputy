@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CATEGORIES,
   type CategoryRow,
@@ -8,6 +8,13 @@ import {
   FINDINGS,
   type ScanResult,
 } from "./data";
+import {
+  EvidenceItem,
+  EvidenceMeter,
+  evidenceMetricsForFinding,
+  type EvidenceFileRef,
+  weightedFindingPenalty,
+} from "./evidence";
 import { CodeText, Icon } from "./icons";
 import { dashboardCategoryForFinding } from "./pr-data";
 import { ScoreRing } from "./score-ring";
@@ -25,17 +32,21 @@ const TABS = ["All", "Drift", "Duplication", "Cycles", "Complexity", "Docs"];
 export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [tab, setTab] = useState("All");
-  const liveFindings = scanResult ? scanResult.findings.map(toDashboardFinding) : null;
+  const liveFindings = scanResult
+    ? scanResult.findings.map((finding) => toDashboardFinding(finding, scanResult, repo))
+    : null;
   const findings = scanResult ? (liveFindings ?? []) : FINDINGS;
   const categories = scanResult ? categoriesFromFindings(findings) : CATEGORIES;
-  const overall = scanResult ? scoreFromConfidence(scanResult.mergeConfidence) : 76;
-  const source = "Sandbox";
+  const overall = scanResult ? scoreFromFindings(scanResult, findings) : 76;
+  const lineStats = scanResult?.lineStats;
   const criticalCount = findings.filter(
     (finding) => finding.severity === "critical" || finding.severity === "high",
   ).length;
-  const summaryRows = scanResult
+  const summaryRows: Array<{ label: string; value: ReactNode }> = scanResult
     ? [
-        { label: "Source", value: source },
+        { label: "Language", value: lineStats?.prominentLanguage ?? "Unknown" },
+        { label: "LOC", value: formatCount(lineStats?.loc) },
+        { label: "SLOC", value: formatCount(lineStats?.sloc) },
         { label: "Files scanned", value: scanResult.scannedFiles.toLocaleString() },
         { label: "Findings", value: String(scanResult.findings.length) },
         {
@@ -47,8 +58,9 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
     : [
         { label: "Branch", value: <code className="code-pill">canary</code> },
         { label: "Commit", value: <code className="code-pill">9f4e21a</code> },
-        { label: "Lines of code", value: "412,887" },
-        { label: "Languages", value: "TS · JS · MDX" },
+        { label: "Language", value: "TypeScript" },
+        { label: "LOC", value: "412,887" },
+        { label: "SLOC", value: "318,204" },
         { label: "Auto-fixable", value: <span className="text-sage-warm">31 / 52</span> },
       ];
 
@@ -93,14 +105,17 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
             </h2>
             <div className="mt-1 flex flex-wrap gap-5 font-[family-name:var(--font-mono)] text-xs text-text-mute max-lg:justify-center">
               <span>
-                Source: <strong className="font-medium text-text">{source}</strong>
-              </span>
-              <span>
                 <strong className="font-medium text-text">{findings.length}</strong>{" "}
                 findings
               </span>
               <span>
                 <strong className="font-medium text-text">{criticalCount}</strong> high
+              </span>
+              <span>
+                <strong className="font-medium text-text">
+                  {lineStats?.prominentLanguage ?? "Mixed"}
+                </strong>{" "}
+                primary language
               </span>
               <span>
                 <strong className="font-medium text-text">
@@ -205,129 +220,104 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                 ))}
               </div>
             </div>
-            {filtered.map((f) => (
-              <div
-                key={f.id}
-                className={`border-b border-line-soft transition-colors last:border-b-0 ${
-                  expanded === f.id ? "bg-ink-3" : ""
-                }`}
-              >
-                <div className="grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-4 px-5 py-3.5">
-                  <span className={`pill pill-${f.severity}`}>{f.severity}</span>
-                  <div>
-                    <div className="text-sm font-medium text-text">
-                      <CodeText>{f.title}</CodeText>
+            {filtered.map((f) => {
+              const evidenceMetrics = evidenceMetricsForFinding(f);
+
+              return (
+                <div
+                  key={f.id}
+                  className={`border-b border-line-soft transition-colors last:border-b-0 ${
+                    expanded === f.id ? "bg-ink-3" : ""
+                  }`}
+                >
+                  <div className="grid w-full grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 px-5 py-3.5">
+                    <span className={`pill pill-${f.severity}`}>{f.severity}</span>
+                    <div>
+                      <div className="text-sm font-medium text-text">
+                        <CodeText>{f.title}</CodeText>
+                      </div>
                     </div>
-                    <div className="mt-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-mute">
-                      {f.path}
-                    </div>
+                    <EvidenceMeter metrics={evidenceMetrics} />
+                    <span className="rounded border border-line px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
+                      {f.category}
+                    </span>
+                    <button
+                      type="button"
+                      aria-expanded={expanded === f.id}
+                      aria-label={`${expanded === f.id ? "Hide" : "Show"} details for ${f.title}`}
+                      onClick={() => setExpanded(expanded === f.id ? null : f.id)}
+                      className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border border-line bg-ink-2 text-text-mute transition hover:bg-ink-4 hover:text-text ${
+                        expanded === f.id ? "rotate-90" : ""
+                      }`}
+                    >
+                      <Icon name="chevron-right" size={14} />
+                    </button>
                   </div>
-                  <span className="rounded border border-line px-2 py-0.5 font-[family-name:var(--font-mono)] text-[11px] text-text-soft">
-                    {f.category}
-                  </span>
-                  <button
-                    type="button"
-                    aria-expanded={expanded === f.id}
-                    aria-label={`${expanded === f.id ? "Hide" : "Show"} details for ${f.title}`}
-                    onClick={() => setExpanded(expanded === f.id ? null : f.id)}
-                    className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border border-line bg-ink-2 text-text-mute transition hover:bg-ink-4 hover:text-text ${
-                      expanded === f.id ? "rotate-90" : ""
-                    }`}
-                  >
-                    <Icon name="chevron-right" size={14} />
-                  </button>
-                </div>
-                {expanded === f.id && (
-                  <div className="grid gap-4 px-5 pb-5">
-                    <div className="rounded-md border border-line-soft bg-ink-2 p-4">
-                      <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                        Summary
-                      </div>
-                      <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
-                        <CodeText>{f.description}</CodeText>
-                      </p>
-                    </div>
-                    {f.evidence?.length ? (
+                  {expanded === f.id && (
+                    <div className="grid gap-4 px-5 pb-5">
                       <div className="rounded-md border border-line-soft bg-ink-2 p-4">
                         <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                          Evidence
-                        </div>
-                        <ul className="m-0 grid list-none gap-1.5 p-0 text-[12px] leading-[1.55] text-text-soft">
-                          {f.evidence.map((item) => (
-                            <li key={item} className="flex gap-2">
-                              <span className="text-gold-warm">-</span>
-                              <span>
-                                <CodeText>{item}</CodeText>
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {f.suggestedFix ? (
-                      <div className="rounded-md border border-line-soft bg-ink-2 p-4">
-                        <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
-                          Suggested fix
+                          Summary
                         </div>
                         <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
-                          <CodeText>{f.suggestedFix}</CodeText>
+                          <CodeText>{f.description}</CodeText>
                         </p>
                       </div>
-                    ) : null}
-                    {f.id === "f1" && (
-                      <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text">
-                        <div className="flex justify-between border-b border-line bg-ink-3 px-3.5 py-2 text-[11px] text-text-mute">
-                          <span>router-reducer.ts</span>
-                          <span>line 42</span>
+                      {f.evidence?.length ? (
+                        <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <div className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                              Evidence
+                            </div>
+                            <EvidenceMeter metrics={evidenceMetrics} />
+                          </div>
+                          <div className="overflow-hidden rounded-md border border-line bg-ink-2 font-[family-name:var(--font-mono)] text-xs leading-[1.6] text-text-soft">
+                            {f.evidence.map((item) => (
+                              <EvidenceItem
+                                key={item}
+                                finding={f}
+                                text={item}
+                                hrefForRef={(ref) =>
+                                  evidenceRefUrl(scanResult, repo, f, ref)
+                                }
+                              />
+                            ))}
+                          </div>
                         </div>
-                        <pre className="m-0 overflow-x-auto whitespace-pre p-3.5">
-                          <span className="block bg-oxblood/15 text-[#F2C9C5]">
-                            <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-                              42
-                            </span>
-                            {
-                              "import { internalRouteCache } from '../../server/internal/route-cache'"
-                            }
-                          </span>
-                          {"\n"}
-                          <span className="block bg-sage/15 text-[#C9DCB7]">
-                            <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-                              42
-                            </span>
-                            {"import type { RouteCacheSnapshot } from '../router-types'"}
-                          </span>
-                          {"\n"}
-                          <span className="block bg-sage/15 text-[#C9DCB7]">
-                            <span className="mr-3.5 inline-block w-7 select-none text-right text-text-mute">
-                              43
-                            </span>
-                            {"// Use the public RouteCacheSnapshot contract instead"}
-                          </span>
-                        </pre>
+                      ) : null}
+                      {f.suggestedFix ? (
+                        <div className="rounded-md border border-line-soft bg-ink-2 p-4">
+                          <div className="mb-2 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-text-mute">
+                            Suggested fix
+                          </div>
+                          <p className="m-0 text-[13px] leading-[1.6] text-text-soft">
+                            <CodeText>{f.suggestedFix}</CodeText>
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-quiet btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenIssue(f);
+                          }}
+                        >
+                          <Icon name="search" size={12} /> Inspect
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm">
+                          <Icon name="git-branch" size={12} /> Suggest fix
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm">
+                          <Icon name="x" size={12} /> Mark as accepted
+                        </button>
                       </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="btn btn-quiet btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenIssue(f);
-                        }}
-                      >
-                        <Icon name="search" size={12} /> Inspect
-                      </button>
-                      <button type="button" className="btn btn-ghost btn-sm">
-                        <Icon name="git-branch" size={12} /> Suggest fix
-                      </button>
-                      <button type="button" className="btn btn-ghost btn-sm">
-                        <Icon name="x" size={12} /> Mark as accepted
-                      </button>
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
             {filtered.length === 0 && (
               <div className="px-5 py-8 text-sm text-text-soft">
                 No findings in this category.
@@ -353,6 +343,9 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
                   </span>
                 </div>
               ))}
+              {lineStats?.languages.length ? (
+                <LanguageBreakdown stats={lineStats} />
+              ) : null}
             </div>
 
             {scanResult?.toolResults.length ? (
@@ -408,7 +401,11 @@ export function Results({ repo, scanResult, onOpenIssue, onPropose, onHome }: Pr
   );
 }
 
-function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
+function toDashboardFinding(
+  finding: ScanResult["findings"][number],
+  scanResult: ScanResult,
+  repo: string,
+): Finding {
   const category = dashboardCategoryForFinding(finding);
   return {
     id: finding.id,
@@ -419,6 +416,16 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
     description: finding.summary,
     evidence: finding.evidence,
     files: finding.files,
+    sources: finding.sources?.map((source) => {
+      const url = repoFileUrl(
+        scanResult,
+        repo,
+        source.path,
+        source.line ?? source.startLine,
+        source.endLine,
+      );
+      return url ? { ...source, url } : source;
+    }),
     suggestedFix: finding.suggestedFix,
     confidence: finding.confidence,
     impact: finding.severity === "high" ? "high" : finding.severity,
@@ -426,17 +433,163 @@ function toDashboardFinding(finding: ScanResult["findings"][number]): Finding {
   };
 }
 
+function repoFileUrl(
+  scanResult: ScanResult | null,
+  repo: string,
+  filePath: string,
+  line?: number,
+  endLine?: number,
+) {
+  const githubBase = githubBlobBase(scanResult, repo);
+  const suffix = line
+    ? `#L${line}${endLine && endLine !== line ? `-L${endLine}` : ""}`
+    : "";
+  if (githubBase) {
+    return `${githubBase}/${encodeRepoPath(filePath)}${suffix}`;
+  }
+
+  if (scanResult?.rootPath) {
+    const root = scanResult.rootPath.replace(/\/+$/, "");
+    return `file://${root}/${encodeRepoPath(filePath)}${suffix}`;
+  }
+
+  return null;
+}
+
+function evidenceRefUrl(
+  scanResult: ScanResult | null,
+  repo: string,
+  finding: Finding,
+  ref: EvidenceFileRef,
+) {
+  const source = finding.sources?.find((item) => item.path === ref.path);
+  const line = ref.line ?? source?.line ?? source?.startLine;
+  const endLine = ref.endLine ?? (ref.line ? undefined : source?.endLine);
+
+  return repoFileUrl(scanResult, repo, ref.path, line, endLine);
+}
+
+function githubBlobBase(scanResult: ScanResult | null, repo: string) {
+  const repoUrl = scanResult?.repoUrl ?? (isGitHubShorthand(repo) ? repo : "");
+  const webBase = githubWebBase(repoUrl);
+  if (!webBase) {
+    return null;
+  }
+
+  const ref = scanResult?.sandbox?.commit ?? scanResult?.sandbox?.revision ?? "HEAD";
+  return `${webBase}/blob/${encodeURIComponent(ref)}`;
+}
+
+function githubWebBase(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  if (isGitHubShorthand(value)) {
+    return `https://github.com/${value}`;
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.hostname !== "github.com") {
+      return null;
+    }
+    const repoPath = url.pathname.replace(/^\/|\/$|\.git$/g, "");
+    return repoPath ? `https://github.com/${repoPath}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function isGitHubShorthand(value: string) {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
+}
+
+function encodeRepoPath(filePath: string) {
+  return filePath
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+function formatCount(value: number | undefined) {
+  return typeof value === "number" ? value.toLocaleString() : "Unknown";
+}
+
+function LanguageBreakdown({ stats }: { stats: NonNullable<ScanResult["lineStats"]> }) {
+  const total = stats.sloc > 0 ? stats.sloc : stats.loc;
+
+  return (
+    <details className="mt-2 border-t border-line-soft pt-2">
+      <summary className="flex cursor-pointer items-center justify-between py-2 font-[family-name:var(--font-mono)] text-[12px] text-text-soft marker:text-text-mute hover:text-text">
+        Language breakdown
+        <span className="text-[10px] uppercase tracking-[0.12em] text-text-mute">
+          % · LOC / SLOC
+        </span>
+      </summary>
+      <div className="mt-1 grid gap-2.5">
+        {stats.languages.map((language, index) => {
+          const lineCount = stats.sloc > 0 ? language.sloc : language.loc;
+          const percent = total > 0 ? (lineCount / total) * 100 : 0;
+
+          return (
+            <div
+              key={language.language}
+              className="border-b border-line-soft pb-2.5 last:border-b-0 last:pb-0"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px]">
+                <span className="min-w-0 truncate font-medium text-text">
+                  {language.language}
+                </span>
+                <span className="shrink-0 font-[family-name:var(--font-mono)] text-text">
+                  {formatPercent(percent)}
+                </span>
+              </div>
+              <div
+                className="h-1.5 overflow-hidden rounded-sm bg-ink-4"
+                role="progressbar"
+                aria-label={`${language.language} ${formatPercent(percent)} of repository SLOC`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(percent)}
+              >
+                <div
+                  className="language-share-bar h-full rounded-sm bg-gold-warm"
+                  style={{
+                    width: `${percent}%`,
+                    animationDelay: `${index * 45}ms`,
+                  }}
+                />
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 font-[family-name:var(--font-mono)] text-[10px] text-text-mute">
+                <span>{language.files.toLocaleString()} files</span>
+                <span>{language.loc.toLocaleString()} LOC</span>
+                <span>{language.sloc.toLocaleString()} SLOC</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return "0%";
+  }
+
+  return value >= 10 ? `${Math.round(value)}%` : `${value.toFixed(1)}%`;
+}
+
 function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   return TABS.filter((tab) => tab !== "All").map((key) => {
     const issues = findings.filter((finding) => finding.category === key);
-    const highCount = issues.filter(
-      (finding) => finding.severity === "critical" || finding.severity === "high",
-    ).length;
-    const mediumCount = issues.filter((finding) => finding.severity === "medium").length;
-    const score = Math.max(
+    const penalty = issues.reduce(
+      (sum, finding) => sum + weightedFindingPenalty(finding),
       0,
-      100 - highCount * 24 - mediumCount * 12 - issues.length * 4,
     );
+    const score = Math.max(0, Math.round(100 - Math.min(90, penalty)));
 
     return {
       key,
@@ -457,14 +610,26 @@ function categoriesFromFindings(findings: Finding[]): CategoryRow[] {
   });
 }
 
-function scoreFromConfidence(confidence: ScanResult["mergeConfidence"]) {
-  if (confidence === "safe") {
-    return 92;
+function scoreFromFindings(scanResult: ScanResult, findings: Finding[]) {
+  if (findings.length === 0) {
+    return scanResult.mergeConfidence === "safe" ? 94 : 88;
   }
-  if (confidence === "needs-docs-update") {
-    return 74;
+
+  const penalty = findings.reduce(
+    (sum, finding) => sum + weightedFindingPenalty(finding),
+    0,
+  );
+  const volumePenalty = Math.min(10, Math.max(0, findings.length - 1) * 1.5);
+  const rawScore = Math.round(100 - Math.min(62, penalty) - volumePenalty);
+
+  if (scanResult.mergeConfidence === "needs-human-review") {
+    return Math.max(12, Math.min(72, rawScore));
   }
-  return 48;
+  if (scanResult.mergeConfidence === "needs-docs-update") {
+    return Math.max(28, Math.min(84, rawScore));
+  }
+
+  return Math.max(72, Math.min(96, rawScore));
 }
 
 function verdictLabel(confidence: ScanResult["mergeConfidence"] | undefined) {

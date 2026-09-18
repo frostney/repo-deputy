@@ -155,7 +155,7 @@ export function Scanning({ repo, onComplete }: Props) {
           <div className="text-base text-text-soft">
             {scanDone
               ? scanResult?.summary
-              : "Starting an isolated shallow checkout and analyzer run."}
+              : "Starting an isolated shallow checkout and audit run."}
           </div>
         </div>
 
@@ -307,6 +307,7 @@ type SplitScanSession = {
   focus: "docs" | "code" | "full";
   revision?: string;
   scannedFiles?: number;
+  lineStats?: ScanResult["lineStats"];
   languageFiles?: Partial<Record<LightLanguage, number>>;
   sandbox?: {
     repoUrl: string;

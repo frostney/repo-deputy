@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Bun 1.3.9 or compatible.
+- Bun 1.4.3 or compatible.
 - Optional Vercel AI Gateway API key for model-backed report generation.
 - Optional Mubit API key for long-term repo memory and public scan counters.
 - Optional Vercel Sandbox credentials for remote repository scans.
